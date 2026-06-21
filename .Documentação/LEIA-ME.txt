@@ -1,0 +1,170 @@
+KASTOR — Gestão de Demandas de Marketing (v2)
+============================================
+
+COMO RODAR (Windows)
+--------------------
+1. Instale o Node.js (https://nodejs.org — versão LTS).
+2. Abra a pasta do projeto no terminal (cmd ou PowerShell):
+     cd caminho\para\fluxo
+3. Na primeira vez, instale a dependência:
+     npm install
+4. Inicie o sistema:
+     npm start
+5. Abra no navegador:  http://localhost:3000
+
+PRIMEIRO ACESSO
+---------------
+Usuário: admin
+Senha:   admin123
+→ Troque a senha em "Meu Perfil" logo no primeiro acesso.
+→ Crie os acessos da equipe em "Usuários" e envie usuário + senha
+  para cada pessoa (cada uma pode trocar a própria senha depois).
+
+ONDE FICAM OS DADOS
+-------------------
+Persistência em SQLite (data/kastor.db). Funciona sem instalar nada — usa o
+módulo node:sqlite, embutido no Node 22+. Estrutura:
+
+  data/kastor.db      → banco principal (entidades, notificações, resets)
+  data/auth.enc       → credenciais (criptografado, chave em data/secret.key)
+  data/uploads/       → anexos e avatares (arquivos binários)
+
+Backup: copiar a pasta data/ inteira. Pra backup "ao vivo" sem parar o
+servidor, use o utilitário sqlite3 ".backup":
+  sqlite3 data/kastor.db ".backup data/backup-$(date +%F).db"
+
+Migração de versões antigas (db.json): na primeira execução com o SQLite,
+o sistema detecta db.json existente, importa tudo pro novo formato e
+renomeia o arquivo antigo pra db.json.migrated-<timestamp>.bak (safety net).
+Anexos em base64 dentro do JSON são extraídos pra data/uploads/ no caminho.
+
+USO EM EQUIPE
+-------------
+Para todos acessarem o mesmo sistema, o servidor precisa rodar em um
+único lugar acessível à equipe:
+  • Em rede local: rode em um PC e acesse pelo IP dele
+    (ex.: http://192.168.0.10:3000).
+  • Na internet: hospede em um serviço Node.js (Render, Railway,
+    VPS etc.) — o projeto sobe sem alterações.
+
+ESTRUTURA
+---------
+server.js          → servidor + API + banco de dados (arquivo)
+data/db.json       → banco de dados (criado automaticamente)
+public/index.html  → estrutura das telas
+public/css/style.css
+public/js/app.js   → lógica do aplicativo
+
+NOTIFICAÇÃO POR E-MAIL (SMTP)
+-----------------------------
+Cada usuário pode receber e-mails quando: virar responsável por uma demanda
+(manual ou pela etapa) e quando for mencionado em comentário. Para ligar essa
+funcionalidade, defina as variáveis de ambiente abaixo ANTES de iniciar o
+servidor (npm start). Sem elas, o sistema continua funcionando normalmente —
+apenas nenhum e-mail é enviado.
+
+Variáveis obrigatórias:
+  SMTP_HOST     → host do servidor SMTP (ex: smtp.gmail.com)
+  SMTP_USER     → usuário/login SMTP (geralmente o próprio e-mail)
+  SMTP_PASS     → senha ou "App Password" (NUNCA a senha normal do Gmail)
+
+Variáveis opcionais:
+  SMTP_PORT     → padrão 587 (use 465 para SSL puro)
+  SMTP_SECURE   → "true" força SSL (padrão: detecta pela porta)
+  SMTP_FROM     → remetente exibido (ex: "Kastor <noreply@empresa.com>")
+                  Se ausente, usa o próprio SMTP_USER
+
+EXEMPLO — Windows PowerShell (sessão atual):
+  $env:SMTP_HOST="smtp.gmail.com"
+  $env:SMTP_PORT="587"
+  $env:SMTP_USER="kastor@suaempresa.com"
+  $env:SMTP_PASS="abcd efgh ijkl mnop"
+  $env:SMTP_FROM="Kastor <kastor@suaempresa.com>"
+  npm start
+
+EXEMPLO — Windows CMD:
+  set SMTP_HOST=smtp.gmail.com
+  set SMTP_PORT=587
+  set SMTP_USER=kastor@suaempresa.com
+  set SMTP_PASS=abcd efgh ijkl mnop
+  set SMTP_FROM=Kastor <kastor@suaempresa.com>
+  npm start
+
+EXEMPLO — Linux/Mac:
+  export SMTP_HOST=smtp.gmail.com
+  export SMTP_PORT=587
+  export SMTP_USER=kastor@suaempresa.com
+  export SMTP_PASS="abcd efgh ijkl mnop"
+  export SMTP_FROM="Kastor <kastor@suaempresa.com>"
+  npm start
+
+PROVEDORES COMUNS:
+  • Gmail/Google Workspace
+      Host: smtp.gmail.com  ·  Porta: 587  ·  Secure: false
+      Senha: precisa ser "Senha de app" (gerada em https://myaccount.google.com
+      → Segurança → Verificação em 2 etapas → Senhas de app)
+  • Outlook 365 / Office 365
+      Host: smtp.office365.com  ·  Porta: 587  ·  Secure: false
+  • Resend
+      Host: smtp.resend.com  ·  Porta: 587  ·  USER: "resend"  ·  PASS: a API key
+  • Mailgun
+      Host: smtp.mailgun.org  ·  Porta: 587
+
+USO PELO USUÁRIO:
+  1. Cada pessoa vai em "Meu Perfil → Notificações por E-mail"
+  2. Cadastra o próprio e-mail e marca os eventos desejados
+  3. Pode clicar em "Enviar teste" para validar
+  4. Admin também pode cadastrar o e-mail de outros usuários pelo modal
+     de gestão de usuários
+
+DICA: pra hospedar em produção (Render, Railway, VPS), defina as variáveis
+nas configurações do provedor — assim ficam persistentes entre restarts.
+
+
+INTEGRAÇÃO COM DISCORD (links nas notificações)
+-----------------------------------------------
+Os webhooks do Discord enviam um link para a demanda. Por padrão o link é
+gerado a partir do host recebido na requisição (funciona em localhost e
+quando acessado por IP da rede). Se o sistema fica atrás de proxy reverso
+ou domínio próprio, defina a variável de ambiente PUBLIC_URL com a URL
+pública do app antes de subir o servidor, por ex.:
+  set PUBLIC_URL=https://fluxo.suaempresa.com    (Windows cmd)
+  $env:PUBLIC_URL="https://fluxo.suaempresa.com" (PowerShell)
+Sem isso o link cairá no endereço usado para criar a demanda — o que pode
+não ser acessível de fora.
+
+
+VARIÁVEIS DE AMBIENTE — REFERÊNCIA RÁPIDA
+-----------------------------------------
+  PORT                 → porta do server (padrão 3000)
+  PUBLIC_URL           → URL pública do app (links nos e-mails/Discord)
+  FLUXO_SECRET         → chave-mestra da criptografia do auth.enc.
+                         OPCIONAL — se ausente, gera secret.key automaticamente.
+                         Em produção é melhor setar pra um valor estável.
+  KASTOR_DATA_DIR      → diretório de dados (padrão ./data). Usado em
+                         testes isolados e deploys com disco persistente.
+  KASTOR_SESSION_DAYS  → tempo de vida da sessão em dias (padrão 30).
+                         Após expirar o usuário precisa logar de novo.
+  SMTP_HOST / SMTP_USER / SMTP_PASS / SMTP_PORT / SMTP_SECURE / SMTP_FROM
+                       → veja seção "NOTIFICAÇÃO POR E-MAIL" acima
+
+
+SEGURANÇA — NOTAS
+-----------------
+• Sessão por cookie httpOnly (kastor_session). JS no browser não lê o token,
+  o que mitiga a maioria dos ataques XSS. Token expira em 30 dias por padrão.
+• Rate limit no /api/login: 5 tentativas erradas por minuto por IP.
+• Reset de senha via e-mail (botão "Esqueci minha senha" no login) requer
+  SMTP configurado. Token de reset expira em 1h e é uso único.
+• Headers de segurança aplicados em todas as respostas: CSP, X-Frame-Options,
+  X-Content-Type-Options, Referrer-Policy, Permissions-Policy.
+• Cookies HTTPS automáticos: a flag `Secure` é adicionada quando a request
+  vem por HTTPS (direta ou via proxy com x-forwarded-proto).
+
+
+TESTES
+------
+  npm test                       # roda os smoke tests (9 testes, ~1s)
+
+Os testes usam um diretório temporário (não tocam data/db.json). Requer Node 18+
+(usa fetch global e o módulo node:test built-in). Sem dependências externas.

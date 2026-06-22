@@ -246,16 +246,20 @@ function migrate() {
     console.log(`› Cleanup: ${dupes.length} função(ões) duplicada(s) removida(s)`);
   }
 
-  // Seed de funções padrão — só adiciona o que NÃO existe (case-insensitive).
-  // Marca como dirty pra persistir imediatamente (sem isso o seed se perde se
-  // o server reinicia antes de qualquer ação do usuário).
-  const defaults = ['Coordenação','Atendimento','Copywriter','Designer','Social Media','Gestor de Tráfego','Desenvolvedor','Audiovisual'];
-  const existingNames = new Set(db.roles.map(r => (r.name || '').trim().toLowerCase()));
-  for (const name of defaults) {
-    if (existingNames.has(name.toLowerCase())) continue;
-    const r = { id: uid(), name, createdAt: nowISO() };
-    db.roles.push(r);
-    markDirty('roles', r, 'upsert');
+  // Seed de funções padrão — só na PRIMEIRA instalação (quando nem o admin
+  // existe ainda no banco). Depois disso o usuário tem controle total: se
+  // deletar/renomear uma função padrão, ela NÃO volta no próximo deploy.
+  // O dedup acima continua rodando em todo boot pra limpar duplicatas legadas.
+  const isFirstInstall = db.users.length === 0;
+  if (isFirstInstall) {
+    const defaults = ['Coordenação','Atendimento','Copywriter','Designer','Social Media','Gestor de Tráfego','Desenvolvedor','Audiovisual'];
+    const existingNames = new Set(db.roles.map(r => (r.name || '').trim().toLowerCase()));
+    for (const name of defaults) {
+      if (existingNames.has(name.toLowerCase())) continue;
+      const r = { id: uid(), name, createdAt: nowISO() };
+      db.roles.push(r);
+      markDirty('roles', r, 'upsert');
+    }
   }
 }
 

@@ -121,8 +121,11 @@ function applyRoute() {
   }
   _routerSilent = true;
   try {
-    // 1) Página
+    // 1) Página — se já estamos nela (boot inicial), força renderCurrent
+    //    pra preencher os skeletons. Sem isso, dashboard fica em loading
+    //    eterno até o usuário navegar e voltar.
     if (currentPage !== r.page) goPage(r.page);
+    else renderCurrent();
     // 2) Fecha qualquer modal roteado aberto (modais transitórios como
     //    confirm/prompt/picker/cmdk ficam intactos).
     const ROUTED = ['detail-modal','demand-modal','project-modal','flow-modal','user-modal','webhook-modal'];
@@ -959,6 +962,8 @@ function openModal(id) {
 const ROUTED_MODAL_IDS = ['detail-modal','demand-modal','project-modal','flow-modal','user-modal','webhook-modal'];
 function closeModal(id) {
   $(id).classList.remove('open');
+  // Para o poll de quase-realtime quando o detalhe é fechado
+  if (id === 'detail-modal' && typeof stopDetailPoll === 'function') stopDetailPoll();
   // Limpa hashes legados (#demand-xyz)
   if (id === 'detail-modal' && location.hash.startsWith('#demand-')) {
     history.replaceState(null, '', location.pathname + location.search);
@@ -3149,12 +3154,50 @@ function editCurrentDemand() {
 function showDetail(id) {
   detailId = id;
   detailView = 'main';
-  renderDetail();
+  renderDetail();             // render imediato com o que tem em cache
   openModal('detail-modal');
-  // URL espelha a demanda aberta — `/demands/<id>` é compartilhável (WhatsApp, Discord, etc).
-  navPush('/demands/' + id);
+  navPush('/demands/' + id);  // URL compartilhável
+  // Atualiza com a versão fresca do server (pega anexos/comentários que outros
+  // usuários adicionaram desde o último loadAll) + inicia poll periódico.
+  refreshDetailDemand();
+  startDetailPoll();
 }
 function demandById(id) { return demands.find(x => x.id === id) || null; }
+
+/* ─── REFRESH DO MODAL DE DETALHE EM QUASE-REALTIME ───
+   Polling de 15s busca a versão mais nova da demanda aberta. Permite
+   que mudanças de outros usuários (anexos, comentários, etapa) apareçam
+   sem precisar dar F5. Pausa enquanto o usuário está digitando pra
+   não perder texto em meio a um comentário. */
+let _detailPollTimer = null;
+async function refreshDetailDemand() {
+  if (!detailId) return;
+  const modal = document.getElementById('detail-modal');
+  if (!modal || !modal.classList.contains('open')) return;
+  // Pula a atualização se o usuário tá digitando dentro do modal
+  const active = document.activeElement;
+  if (active && modal.contains(active) &&
+      (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
+    return;
+  }
+  try {
+    const fresh = await api('/demands/' + detailId);
+    if (!fresh || fresh.id !== detailId) return;
+    const local = demandById(detailId);
+    // Re-renderiza apenas se algo de fato mudou (compara via JSON.stringify rápido).
+    if (!local || JSON.stringify(local) !== JSON.stringify(fresh)) {
+      patchDemand(fresh);
+      renderDetail();
+    }
+  } catch {}
+}
+function startDetailPoll() {
+  stopDetailPoll();
+  _detailPollTimer = setInterval(refreshDetailDemand, 15000);
+}
+function stopDetailPoll() {
+  if (_detailPollTimer) { clearInterval(_detailPollTimer); _detailPollTimer = null; }
+}
 
 function renderDetail() {
   const d = demandById(detailId);

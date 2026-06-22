@@ -1523,6 +1523,13 @@ function getDemand(req, res) {
   return d;
 }
 
+// GET single demand — usado pelo frontend pra refrescar o modal de detalhe
+// sem precisar re-baixar a lista inteira. Permite quase-realtime via poll.
+app.get('/api/demands/:id', requireAuth, (req, res) => {
+  const d = getDemand(req, res); if (!d) return;
+  res.json(d);
+});
+
 app.put('/api/demands/:id', requireAuth, (req, res) => {
   const d = getDemand(req, res); if (!d) return;
   const b = req.body || {};

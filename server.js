@@ -221,28 +221,66 @@ function migrate() {
     delete d.duration; delete d.type;
   });
 
-  // Seed de funções padrão
-  if (db.roles.length === 0) {
-    ['Coordenação','Atendimento','Copywriter','Designer','Social Media','Gestor de Tráfego','Desenvolvedor','Audiovisual']
-      .forEach(name => db.roles.push({ id: uid(), name, createdAt: nowISO() }));
+  // Deduplica funções já existentes (caso de boots anteriores que criaram cópias):
+  // pra cada nome (case-insensitive), mantém a MAIS ANTIGA e remove o resto.
+  // Usuários que apontavam pra cópias deletadas continuam funcionando — o campo
+  // `role` é uma string livre, não FK.
+  const seenRoles = new Map();
+  const dupes = [];
+  for (const r of db.roles) {
+    const key = (r.name || '').trim().toLowerCase();
+    if (!key) continue;
+    if (seenRoles.has(key)) {
+      const existing = seenRoles.get(key);
+      const keep = (existing.createdAt || '') <= (r.createdAt || '') ? existing : r;
+      const drop = keep === existing ? r : existing;
+      dupes.push(drop.id);
+      seenRoles.set(key, keep);
+    } else {
+      seenRoles.set(key, r);
+    }
+  }
+  if (dupes.length) {
+    db.roles = db.roles.filter(r => !dupes.includes(r.id));
+    dupes.forEach(id => removeEntity('roles', id));
+    console.log(`› Cleanup: ${dupes.length} função(ões) duplicada(s) removida(s)`);
+  }
+
+  // Seed de funções padrão — só adiciona o que NÃO existe (case-insensitive).
+  // Marca como dirty pra persistir imediatamente (sem isso o seed se perde se
+  // o server reinicia antes de qualquer ação do usuário).
+  const defaults = ['Coordenação','Atendimento','Copywriter','Designer','Social Media','Gestor de Tráfego','Desenvolvedor','Audiovisual'];
+  const existingNames = new Set(db.roles.map(r => (r.name || '').trim().toLowerCase()));
+  for (const name of defaults) {
+    if (existingNames.has(name.toLowerCase())) continue;
+    const r = { id: uid(), name, createdAt: nowISO() };
+    db.roles.push(r);
+    markDirty('roles', r, 'upsert');
   }
 }
 
 /* ─── SEED inicial ─── */
 function seed() {
+  // Marca como dirty pra persistir IMEDIATAMENTE no SQLite.
+  // Sem isso, se o container reinicia antes de qualquer ação do usuário,
+  // o seed se perde e roda de novo no próximo boot (causando duplicação).
+  if (db.workspaces.length > 0) markDirty('workspaces', db.workspaces[0], 'upsert');
+
   if (db.users.length === 0) {
     const id = uid();
     const wsAll = db.workspaces.map(w => w.id);
-    db.users.push({
+    const adminUser = {
       id, username: 'admin', name: 'Administrador', role: 'Coordenação',
       isAdmin: true, avatar: null, active: true, workspaces: wsAll, createdAt: nowISO()
-    });
+    };
+    db.users.push(adminUser);
+    markDirty('users', adminUser, 'upsert');
     auth.setPassword(id, 'admin123');
     console.log('› Usuário inicial — login: admin | senha: admin123 (altere no Perfil)');
   }
-  if (db.flows.length === 0) {
+  if (db.flows.length === 0 && db.workspaces.length > 0) {
     const ws = db.workspaces[0].id;
-    db.flows.push({
+    const defaultFlow = {
       id: uid(), workspaceId: ws, projectId: null,
       name: 'Fluxo Padrão de Marketing', demandType: 'Social Media',
       stages: [
@@ -254,7 +292,9 @@ function seed() {
         { id: uid(), label: 'Concluída',     color: '#22D3A5', done: true,  responsibleId: null, deadlineDays: null }
       ],
       createdAt: nowISO()
-    });
+    };
+    db.flows.push(defaultFlow);
+    markDirty('flows', defaultFlow, 'upsert');
   }
 }
 

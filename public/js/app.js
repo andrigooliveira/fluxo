@@ -1671,7 +1671,11 @@ function switchWorkspace(id) {
 function renderSidebarUser() {
   $('sidebar-uname').textContent = me.name;
   $('sidebar-urole').textContent = me.isAdmin ? (me.role ? me.role + ' · Admin' : 'Administrador') : (me.role || 'Equipe');
-  $('sidebar-avatar').outerHTML = avatarHTML(me, 'avatar').replace('class="avatar"', 'class="avatar" id="sidebar-avatar"');
+  // Mantém o id="sidebar-avatar" depois da substituição — regex pega qualquer
+  // combinação de classes (avatar, avatar presence-online, etc) pra não quebrar
+  // se avatarHTML virar a incluir mais classes (ex.: anel de presença).
+  const av = $('sidebar-avatar');
+  if (av) av.outerHTML = avatarHTML(me, 'avatar').replace(/class="([^"]+)"/, 'class="$1" id="sidebar-avatar"');
   $('nav-flows').style.display = me.isAdmin ? '' : 'none';
   $('nav-workspaces').style.display = me.isAdmin ? '' : 'none';
   $('nav-users').style.display = me.isAdmin ? '' : 'none';
@@ -5895,7 +5899,9 @@ function renderProfile() {
   $('profile-pref-mention').checked = prefs.mention !== false;
   $('profile-email-smtp-warning').style.display = me._smtpEnabled === false ? '' : 'none';
   fillRoleSelect('profile-f-role', me.role || '');
-  $('profile-avatar').outerHTML = avatarHTML(me, 'avatar avatar-lg').replace('class="avatar avatar-lg"', 'class="avatar avatar-lg" id="profile-avatar"');
+  // Mesma lógica do sidebar: regex aguenta classes extras (presence-online, etc).
+  const profAv = $('profile-avatar');
+  if (profAv) profAv.outerHTML = avatarHTML(me, 'avatar avatar-lg').replace(/class="([^"]+)"/, 'class="$1" id="profile-avatar"');
   $('avatar-remove-btn').style.display = me.avatar ? '' : 'none';
 }
 async function saveEmailSettings() {

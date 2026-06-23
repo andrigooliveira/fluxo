@@ -187,11 +187,72 @@ function migrate() {
     delete db.tokens;
   }
 
+  if (!Array.isArray(db.clients)) db.clients = [];
   db.projects.forEach(p => { if (!p.workspaceId) p.workspaceId = defWs; });
+
+  // Migração: promover `project.client` (string) → entidade Client.
+  // Cria 1 Client por valor único (workspaceId + nome case-insensitive).
+  // Projetos sem cliente recebem um cliente fallback "Sem cliente" do workspace.
+  const ensureClient = (wsId, name) => {
+    const key = (name || '').trim();
+    const lookup = key.toLowerCase() || '__sem_cliente__';
+    let c = db.clients.find(x => x.workspaceId === wsId && (x.name || '').trim().toLowerCase() === lookup);
+    if (c) return c;
+    const isPlaceholder = !key;
+    c = {
+      id: uid(),
+      workspaceId: wsId,
+      name: isPlaceholder ? 'Sem cliente' : key,
+      color: '#7A00FF',
+      avatar: null,
+      segment: '',
+      driveFiles: '',
+      brandAssets: '',
+      guidelines: '',
+      active: true,
+      placeholder: isPlaceholder, // marcador interno do "Sem cliente" auto-gerado
+      createdAt: nowISO()
+    };
+    db.clients.push(c);
+    markDirty('clients', c, 'upsert');
+    return c;
+  };
+  db.projects.forEach(p => {
+    if (p.clientId) return; // já migrado
+    const c = ensureClient(p.workspaceId, p.client);
+    p.clientId = c.id;
+    // Mantém o campo `client` (string) por compat — código antigo pode usar
+    markDirty('projects', p, 'upsert');
+  });
+  db.flows.forEach(f => {
+    if (f.clientId) return; // já migrado
+    if (!f.client && !f.projectId) return; // fluxo "Geral" — sem cliente mesmo
+    // Tenta resolver via projectId primeiro, depois via string client
+    let c = null;
+    if (f.projectId) {
+      const proj = db.projects.find(p => p.id === f.projectId);
+      if (proj?.clientId) c = db.clients.find(x => x.id === proj.clientId);
+    }
+    if (!c && f.client) c = ensureClient(f.workspaceId, f.client);
+    if (c) {
+      f.clientId = c.id;
+      markDirty('flows', f, 'upsert');
+    }
+  });
+
   db.flows.forEach(f => {
     if (!f.workspaceId) f.workspaceId = defWs;
     if (f.projectId === undefined) f.projectId = null;
     if (f.demandType === undefined) f.demandType = '';
+    if (f.icon === undefined) f.icon = null;
+    // client: deriva do projectId se ainda não tiver. Fluxos sem projectId ficam
+    // sem cliente (workspace-wide / "Geral"). Pra fluxos vinculados a projeto,
+    // o cliente é herdado do projeto.
+    if (f.client === undefined) {
+      const proj = f.projectId ? db.projects.find(p => p.id === f.projectId) : null;
+      f.client = proj?.client || null;
+      markDirty('flows', f, 'upsert'); // persiste a migração imediato
+    }
     (f.stages || []).forEach(s => {
       if (s.responsibleId === undefined) s.responsibleId = null;
       if (s.deadlineDays === undefined) s.deadlineDays = null;
@@ -1261,6 +1322,123 @@ app.delete('/api/templates/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+/* ── CLIENTES (entidade nova — pai dos projetos) ──
+   Cada cliente pertence a um workspace, tem metadados (segmento, links de
+   drive, diretrizes) e status ativo/desativado. Desativar cascateia pros
+   projetos. Exclusão é protegida por digitação do nome no frontend. */
+app.get('/api/clients', requireAuth, (req, res) => {
+  const ids = wsIdsFor(req.user);
+  res.json(db.clients.filter(c => ids.includes(c.workspaceId)));
+});
+
+function buildClientPayload(body, base) {
+  // Helper que monta um cliente a partir de body, preservando defaults sensatos.
+  const c = base || {};
+  if (typeof body.name === 'string' && body.name.trim()) c.name = body.name.trim();
+  if (typeof body.color === 'string' && body.color.trim()) c.color = body.color;
+  if (typeof body.segment === 'string') c.segment = body.segment.trim();
+  if (typeof body.driveFiles === 'string') c.driveFiles = normalizeUrlSrv(body.driveFiles);
+  if (typeof body.brandAssets === 'string') c.brandAssets = normalizeUrlSrv(body.brandAssets);
+  if (typeof body.guidelines === 'string') c.guidelines = body.guidelines;
+  // roleAssignments: { [roleName]: userId | null } — usuário padrão por função pro cliente
+  if (body.roleAssignments && typeof body.roleAssignments === 'object') {
+    const out = {};
+    for (const [role, uidVal] of Object.entries(body.roleAssignments)) {
+      const r = String(role || '').trim();
+      if (!r) continue;
+      out[r] = uidVal ? String(uidVal) : null;
+    }
+    c.roleAssignments = out;
+  }
+  if (body.avatar !== undefined) {
+    if (!body.avatar) c.avatar = null;
+    else if (String(body.avatar).startsWith('/uploads/')) c.avatar = body.avatar;
+    else if (String(body.avatar).startsWith('data:image/')) {
+      const saved = saveUploadFromDataUri(body.avatar, (c.name || 'cliente') + '-avatar');
+      c.avatar = saved ? saved.url : null;
+    }
+  }
+  return c;
+}
+
+app.post('/api/clients', requireAuth, (req, res) => {
+  const b = req.body || {};
+  if (!String(b.name || '').trim()) return res.status(400).json({ error: 'Nome do cliente é obrigatório' });
+  let wsId = b.workspaceId;
+  if (!wsId || !canAccessWs(req.user, wsId)) wsId = wsIdsFor(req.user)[0];
+  // Bloqueia duplicado dentro do mesmo workspace (case-insensitive)
+  const exists = db.clients.some(c =>
+    c.workspaceId === wsId && (c.name || '').trim().toLowerCase() === b.name.trim().toLowerCase()
+  );
+  if (exists) return res.status(409).json({ error: 'Já existe um cliente com esse nome neste workspace.' });
+  const c = buildClientPayload(b, {
+    id: uid(),
+    workspaceId: wsId,
+    name: '',
+    color: '#7A00FF',
+    avatar: null,
+    segment: '',
+    driveFiles: '',
+    brandAssets: '',
+    guidelines: '',
+    active: true,
+    createdAt: nowISO()
+  });
+  db.clients.push(c);
+  saveEntity('clients', c);
+  res.status(201).json(c);
+});
+
+app.put('/api/clients/:id', requireAuth, (req, res) => {
+  const c = db.clients.find(x => x.id === req.params.id);
+  if (!c || !canAccessWs(req.user, c.workspaceId)) return res.status(404).json({ error: 'Cliente não encontrado' });
+  const b = req.body || {};
+  // Checa duplicidade se renomeou
+  if (typeof b.name === 'string' && b.name.trim() && b.name.trim().toLowerCase() !== (c.name || '').trim().toLowerCase()) {
+    const dup = db.clients.some(x =>
+      x.id !== c.id && x.workspaceId === c.workspaceId &&
+      (x.name || '').trim().toLowerCase() === b.name.trim().toLowerCase()
+    );
+    if (dup) return res.status(409).json({ error: 'Já existe outro cliente com esse nome neste workspace.' });
+  }
+  // Move pra outro workspace? Permitido pra admins, com revalidação
+  if (b.workspaceId && b.workspaceId !== c.workspaceId && canAccessWs(req.user, b.workspaceId)) {
+    c.workspaceId = b.workspaceId;
+  }
+  buildClientPayload(b, c);
+  // Cascade: desativar cliente desativa todos os projetos vinculados
+  if (typeof b.active === 'boolean') {
+    const wasActive = c.active !== false;
+    c.active = b.active;
+    if (wasActive && !b.active) {
+      db.projects.forEach(p => {
+        if (p.clientId === c.id && p.active !== false) {
+          p.active = false;
+          saveEntity('projects', p);
+        }
+      });
+    }
+  }
+  // O `placeholder` (auto-criado pra órfãos) some quando o usuário edita o nome
+  if (b.name && c.placeholder) delete c.placeholder;
+  saveEntity('clients', c);
+  res.json(c);
+});
+
+app.delete('/api/clients/:id', requireAuth, (req, res) => {
+  const c = db.clients.find(x => x.id === req.params.id);
+  if (!c || !canAccessWs(req.user, c.workspaceId)) return res.status(404).json({ error: 'Cliente não encontrado' });
+  const linkedProjects = db.projects.filter(p => p.clientId === c.id);
+  if (linkedProjects.length) {
+    return res.status(409).json({
+      error: `Este cliente tem ${linkedProjects.length} projeto(s) vinculado(s). Exclua ou mova os projetos antes.`
+    });
+  }
+  db.clients = db.clients.filter(x => x.id !== c.id);
+  removeEntity('clients', c.id);
+  res.json({ ok: true });
+});
+
 /* ── PROJETOS (filtrados por workspace acessível) ── */
 app.get('/api/projects', requireAuth, (req, res) => {
   const ids = wsIdsFor(req.user);
@@ -1268,27 +1446,72 @@ app.get('/api/projects', requireAuth, (req, res) => {
 });
 
 app.post('/api/projects', requireAuth, (req, res) => {
-  const { name, client, color, workspaceId, avatar } = req.body || {};
+  const { name, client, clientId, color, workspaceId, avatar } = req.body || {};
   if (!String(name || '').trim()) return res.status(400).json({ error: 'Nome do projeto é obrigatório' });
   const ws = workspaceId && canAccessWs(req.user, workspaceId) ? workspaceId : wsIdsFor(req.user)[0];
   if (!ws) return res.status(400).json({ error: 'Selecione um workspace válido' });
+  // Resolve clientId — agora obrigatório existir antes (cadastrado em /clients).
+  // Não cria mais cliente automático a partir de string livre.
+  let clientEntity = null;
+  if (clientId) {
+    clientEntity = db.clients.find(c => c.id === clientId && c.workspaceId === ws);
+    if (!clientEntity) return res.status(400).json({ error: 'Cliente inválido. Cadastre o cliente na aba "Clientes" antes.' });
+  } else if (client && String(client).trim()) {
+    // Compat: aceita nome, mas SÓ se já existe. Não cria mais.
+    const cname = String(client).trim();
+    clientEntity = db.clients.find(c =>
+      c.workspaceId === ws && (c.name || '').toLowerCase() === cname.toLowerCase()
+    );
+    if (!clientEntity) return res.status(400).json({ error: `Cliente "${cname}" não cadastrado. Crie em "Clientes" antes.` });
+  } else {
+    return res.status(400).json({ error: 'Selecione um cliente cadastrado pro projeto.' });
+  }
+  // Avatar: aceita /uploads/, extrai base64 pro disco
+  let avatarUrl = null;
+  if (avatar) {
+    if (String(avatar).startsWith('/uploads/')) avatarUrl = avatar;
+    else if (String(avatar).startsWith('data:image/')) {
+      const saved = saveUploadFromDataUri(avatar, String(name).trim() + '-avatar');
+      avatarUrl = saved ? saved.url : null;
+    }
+  }
   const p = {
     id: uid(), workspaceId: ws, name: String(name).trim(),
-    client: String(client || '').trim(), color: color || '#7A00FF',
-    avatar: avatar && String(avatar).startsWith('data:image/') ? avatar : null,
+    clientId: clientEntity ? clientEntity.id : null,
+    client: clientEntity ? clientEntity.name : '', // legacy field, mantém sincronizado
+    color: color || '#7A00FF',
+    avatar: avatarUrl,
     active: true, createdAt: nowISO()
   };
   db.projects.push(p);
-  saveDB();
+  saveEntity('projects', p);
   res.status(201).json(p);
 });
 
 app.put('/api/projects/:id', requireAuth, (req, res) => {
   const p = db.projects.find(x => x.id === req.params.id);
   if (!p || !canAccessWs(req.user, p.workspaceId)) return res.status(404).json({ error: 'Projeto não encontrado' });
-  const { name, client, color, active, workspaceId, avatar } = req.body || {};
+  const { name, client, clientId, color, active, workspaceId, avatar } = req.body || {};
   if (typeof name === 'string' && name.trim()) p.name = name.trim();
-  if (typeof client === 'string') p.client = client.trim();
+  // Re-vincular a outro cliente (ou nenhum)
+  if (clientId !== undefined) {
+    if (!clientId) { p.clientId = null; p.client = ''; }
+    else {
+      const c = db.clients.find(x => x.id === clientId && x.workspaceId === p.workspaceId);
+      if (!c) return res.status(400).json({ error: 'Cliente inválido' });
+      p.clientId = c.id;
+      p.client = c.name;
+    }
+  } else if (typeof client === 'string') {
+    // Compat por nome: só aceita se o cliente JÁ existe.
+    if (!client.trim()) {
+      return res.status(400).json({ error: 'Selecione um cliente cadastrado pro projeto.' });
+    }
+    const c = db.clients.find(x => x.workspaceId === p.workspaceId && (x.name || '').toLowerCase() === client.trim().toLowerCase());
+    if (!c) return res.status(400).json({ error: `Cliente "${client.trim()}" não cadastrado. Crie em "Clientes" antes.` });
+    p.clientId = c.id;
+    p.client = c.name;
+  }
   if (color) p.color = color;
   if (typeof active === 'boolean') p.active = active;
   if (avatar !== undefined) {
@@ -1368,7 +1591,7 @@ function sanitizeStages(stages) {
 }
 
 app.post('/api/flows', requireAuth, adminOnly, (req, res) => {
-  const { name, stages, demandType, projectId, workspaceId } = req.body || {};
+  const { name, stages, demandType, projectId, workspaceId, client, clientId, icon, applyToAll } = req.body || {};
   const clean = sanitizeStages(stages);
   if (!String(name || '').trim()) return res.status(400).json({ error: 'Nome do fluxo é obrigatório' });
   if (!clean) return res.status(400).json({ error: 'O fluxo precisa de pelo menos 2 etapas com nome' });
@@ -1379,27 +1602,94 @@ app.post('/api/flows', requireAuth, adminOnly, (req, res) => {
     if (!proj || !canAccessWs(req.user, proj.workspaceId)) return res.status(400).json({ error: 'Projeto inválido' });
     ws = proj.workspaceId;
   }
+  // Resolve a entidade Client. Prioridade: clientId explícito → string client →
+  // herda do projeto via clientId. Null = "Geral / workspace-wide".
+  let clientEntity = null;
+  if (clientId) {
+    clientEntity = db.clients.find(c => c.id === clientId && c.workspaceId === ws);
+  } else if (client && String(client).trim()) {
+    const cname = String(client).trim();
+    clientEntity = db.clients.find(c => c.workspaceId === ws && (c.name || '').toLowerCase() === cname.toLowerCase());
+  } else if (proj?.clientId) {
+    clientEntity = db.clients.find(c => c.id === proj.clientId);
+  }
+  const clientName = clientEntity?.name || null;
+  // Icon pode ser URL pronta (/uploads/...) ou base64 (extrai pro disco).
+  let iconUrl = null;
+  if (typeof icon === 'string') {
+    if (icon.startsWith('/uploads/')) iconUrl = icon;
+    else if (icon.startsWith('data:image/')) {
+      const saved = saveUploadFromDataUri(icon, String(name || 'flow').trim() + '-icon');
+      iconUrl = saved ? saved.url : null;
+    }
+  }
+  // Se applyToAll=true com cliente, cria 1 fluxo pra CADA projeto ATIVO desse cliente.
+  if (applyToAll && clientEntity) {
+    const targets = db.projects.filter(p =>
+      p.workspaceId === ws && p.active !== false && p.clientId === clientEntity.id
+    );
+    if (!targets.length) return res.status(400).json({ error: `Nenhum projeto ativo encontrado pro cliente "${clientName}".` });
+    const created = [];
+    for (const t of targets) {
+      const f = {
+        id: uid(), workspaceId: ws, projectId: t.id,
+        clientId: clientEntity.id, client: clientName, icon: iconUrl,
+        name: String(name).trim(), demandType: String(demandType || '').trim(),
+        stages: sanitizeStages(stages), createdAt: nowISO()
+      };
+      db.flows.push(f);
+      saveEntity('flows', f);
+      created.push(f);
+    }
+    return res.status(201).json({ created, count: created.length });
+  }
   const f = {
     id: uid(), workspaceId: ws, projectId: proj ? proj.id : null,
+    clientId: clientEntity ? clientEntity.id : null, client: clientName,
+    icon: iconUrl,
     name: String(name).trim(), demandType: String(demandType || '').trim(),
     stages: clean, createdAt: nowISO()
   };
   db.flows.push(f);
-  saveDB();
+  saveEntity('flows', f);
   res.status(201).json(f);
 });
 
 app.put('/api/flows/:id', requireAuth, adminOnly, (req, res) => {
   const f = db.flows.find(x => x.id === req.params.id);
   if (!f || !canAccessWs(req.user, f.workspaceId)) return res.status(404).json({ error: 'Fluxo não encontrado' });
-  const { name, stages, demandType, projectId } = req.body || {};
+  const { name, stages, demandType, projectId, client, clientId, icon } = req.body || {};
   if (typeof name === 'string' && name.trim()) f.name = name.trim();
   if (typeof demandType === 'string') f.demandType = demandType.trim();
+  // Atualiza clientId (e mantém f.client em sincronia pelo nome da entidade)
+  if (clientId !== undefined) {
+    if (!clientId) { f.clientId = null; f.client = null; }
+    else {
+      const c = db.clients.find(x => x.id === clientId && x.workspaceId === f.workspaceId);
+      if (!c) return res.status(400).json({ error: 'Cliente inválido' });
+      f.clientId = c.id;
+      f.client = c.name;
+    }
+  } else if (client !== undefined) {
+    f.client = (typeof client === 'string' && client.trim()) ? client.trim() : null;
+  }
+  if (icon !== undefined) {
+    if (!icon) f.icon = null;
+    else if (typeof icon === 'string' && (icon.startsWith('/uploads/') || icon.startsWith('data:image/'))) {
+      // Se chegou base64, extrai pro disco (consistente com avatares)
+      if (icon.startsWith('data:image/')) {
+        const saved = saveUploadFromDataUri(icon, (f.name || 'flow') + '-icon');
+        f.icon = saved ? saved.url : null;
+      } else f.icon = icon;
+    }
+  }
   if (projectId !== undefined) {
     if (projectId) {
       const proj = db.projects.find(p => p.id === projectId);
       if (!proj || !canAccessWs(req.user, proj.workspaceId)) return res.status(400).json({ error: 'Projeto inválido' });
       f.projectId = proj.id; f.workspaceId = proj.workspaceId;
+      // Sincroniza o client com o projeto se não foi explicitamente passado
+      if (client === undefined && proj.client) f.client = proj.client;
     } else f.projectId = null;
   }
   if (stages) {

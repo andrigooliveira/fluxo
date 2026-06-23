@@ -2765,3 +2765,378 @@ body.zen-mode #app { padding: 0; }
   .detail-head-top { flex-direction: column; align-items: flex-start; gap: 10px; }
   .detail-head-actions { flex-wrap: wrap; }
 }
+
+/* ─── FLUXOS — Cards de cliente e cards de fluxo ─── */
+.flow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+.flow-card {
+  position: relative;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 24px 18px 20px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  transition: border-color .15s var(--ease-out), transform .15s var(--ease-spring), background .15s var(--ease-out);
+  min-height: 200px;
+}
+.flow-card:hover {
+  border-color: var(--accent-text);
+  transform: translateY(-2px);
+  background: var(--surface);
+}
+.flow-card-avatar,
+.flow-card-icon {
+  width: 64px; height: 64px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; font-weight: 700;
+  flex-shrink: 0;
+  background: var(--surface-3);
+}
+.flow-card-icon--placeholder { color: var(--text-muted); }
+.flow-card-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-top: 4px;
+  letter-spacing: -0.01em;
+  word-break: break-word;
+  max-width: 100%;
+}
+.flow-card-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: -4px;
+}
+.flow-card-actions {
+  position: absolute;
+  top: 10px; right: 10px;
+  display: flex; gap: 4px;
+  opacity: 0;
+  transition: opacity .12s var(--ease-out);
+}
+.flow-card:hover .flow-card-actions { opacity: 1; }
+.flow-sort-btn.active {
+  background: var(--accent-dim);
+  color: var(--accent-text);
+}
+
+/* ─── FLOW MODAL — Layout novo ─── */
+.flow-modal-head {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between;
+  gap: 16px;
+}
+.flow-modal-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  letter-spacing: -0.005em;
+}
+.flow-modal-head-right {
+  display: flex; align-items: center; gap: 12px;
+}
+.flow-icon-picker {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.flow-icon-preview {
+  width: 56px; height: 56px;
+  border-radius: var(--radius-sm);
+  border: 2px dashed var(--hairline-strong);
+  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  transition: border-color .12s var(--ease-out), background .12s var(--ease-out);
+  overflow: hidden;
+}
+.flow-icon-picker:hover .flow-icon-preview {
+  border-color: var(--accent-text);
+  color: var(--accent-text);
+}
+.flow-icon-preview.has-icon {
+  border-style: solid;
+  border-color: var(--hairline);
+}
+.flow-icon-preview.has-icon .flow-icon-label { display: none; }
+.flow-icon-label { user-select: none; }
+
+/* Botão "Adicionar nova etapa" — full-width pra parecer com o mockup */
+.flow-add-stage-btn {
+  margin-top: 10px;
+  width: 100%;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px dashed var(--hairline-strong);
+  border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.flow-add-stage-btn:hover {
+  background: var(--surface-3);
+  border-color: var(--accent-text);
+  color: var(--accent-text);
+}
+
+/* Footer do modal de fluxo com toggle à esquerda + ações à direita */
+.flow-modal-foot {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.flow-modal-foot-right {
+  display: flex; gap: 10px; align-items: center; margin-left: auto;
+}
+
+/* Toggle estilizado pro "Aplicar a todos os projetos" */
+.flow-apply-toggle {
+  display: inline-flex; align-items: center; gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.flow-apply-toggle input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0; height: 0;
+  pointer-events: none;
+}
+.flow-toggle-track {
+  position: relative;
+  display: inline-block;
+  width: 36px; height: 20px;
+  background: var(--surface-3);
+  border-radius: var(--radius-pill);
+  transition: background .15s var(--ease-out);
+}
+.flow-toggle-thumb {
+  position: absolute;
+  left: 2px; top: 2px;
+  width: 16px; height: 16px;
+  background: var(--text-dim);
+  border-radius: 50%;
+  transition: transform .18s var(--ease-spring), background .15s var(--ease-out);
+}
+.flow-apply-toggle input:checked + .flow-toggle-track {
+  background: var(--accent);
+}
+.flow-apply-toggle input:checked + .flow-toggle-track .flow-toggle-thumb {
+  transform: translateX(16px);
+  background: #fff;
+}
+.flow-apply-toggle:hover .flow-toggle-track { filter: brightness(1.1); }
+.flow-apply-toggle input:focus-visible + .flow-toggle-track {
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+/* ─── CLIENTES — cards, status, detalhe ─── */
+.client-card { position: relative; }
+.client-card-avatar {
+  width: 64px; height: 64px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px; font-weight: 700; flex-shrink: 0;
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.client-card.is-archived { opacity: 0.55; }
+.client-card.is-archived:hover { opacity: 1; }
+.client-card-status {
+  position: absolute;
+  top: 10px; right: 10px;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.client-card-status--active   { background: rgba(60,227,160,0.18); color: var(--success); }
+.client-card-status--archived { background: var(--surface-3); color: var(--text-muted); }
+
+/* Toggle de Situação (Todos / Ativos / Arquivados) */
+.client-status-toggle {
+  display: inline-flex;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 2px;
+}
+.client-status-btn { font-size: 12px !important; padding: 5px 12px !important; border-radius: 5px !important; }
+.client-status-btn.active { background: var(--surface); color: var(--accent-text); box-shadow: var(--shadow-xs); }
+
+/* Detalhe do cliente — seções */
+.client-detail-section { margin-bottom: 8px; }
+.client-detail-section-label {
+  font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+/* Pessoas */
+.client-person-row {
+  display: grid;
+  grid-template-columns: 220px 40px 1fr;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  align-items: center;
+}
+.client-person-role {
+  font-size: 12.5px; color: var(--text-dim); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.client-person-name {
+  display: flex; align-items: center; justify-content: center;
+}
+.client-person-row select.form-control {
+  height: 36px; font-size: 13px;
+}
+.client-people-empty {
+  padding: 24px 16px;
+  background: var(--surface-2);
+  border: 1px dashed var(--hairline);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Tempo dedicado */
+.client-time-head {
+  display: flex; align-items: center; gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+}
+.client-time-total {
+  display: inline-flex; align-items: center; gap: 12px;
+  padding: 8px 14px;
+  background: var(--surface-3);
+  border-radius: var(--radius-sm);
+}
+.client-time-label {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+.client-time-value {
+  font-size: 18px; font-weight: 800;
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums;
+}
+.client-time-periods { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.client-time-period { font-size: 12px !important; padding: 6px 12px !important; }
+.client-time-period.active { background: var(--accent-dim); color: var(--accent-text); border-color: transparent; }
+
+.client-time-row {
+  display: grid;
+  grid-template-columns: 260px 160px 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+}
+.client-time-user { display: flex; align-items: center; gap: 10px; }
+.client-time-user-name { font-size: 13px; font-weight: 600; }
+.client-time-user-role { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.client-time-meta { display: inline-flex; align-items: baseline; gap: 8px; font-variant-numeric: tabular-nums; }
+.client-time-pct { font-size: 13px; font-weight: 700; }
+.client-time-hh { font-size: 11.5px; color: var(--text-muted); }
+
+.client-chart-wrap {
+  padding: 18px 20px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+}
+.client-chart-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.client-chart-title { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.client-chart-value { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+.client-chart-delta { font-size: 11px; color: var(--text-muted); font-weight: 500; margin-left: 4px; }
+
+/* Modal Cliente — layout 2 colunas (avatar + campos) */
+.client-modal-grid {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 24px;
+}
+.client-avatar-col { display: flex; flex-direction: column; align-items: stretch; }
+.client-avatar-big {
+  width: 100%; aspect-ratio: 1;
+  background: var(--surface-3);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted);
+  background-position: center;
+  background-size: cover;
+}
+.client-fields-col { display: flex; flex-direction: column; gap: 14px; }
+
+/* Footer do modal Cliente — split entre ações destrutivas e save */
+.client-modal-foot {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.client-modal-foot-left { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.client-modal-foot-right { display: flex; gap: 10px; }
+.client-modal-delete {
+  color: var(--danger) !important;
+  border: 1px solid var(--danger) !important;
+  background: transparent !important;
+}
+.client-modal-delete:hover { background: rgba(239,80,80,0.10) !important; }
+.client-status-group { display: inline-flex; align-items: center; gap: 4px; padding-left: 4px; }
+.client-status-pick { font-size: 12px !important; padding: 5px 12px !important; }
+.client-status-pick.active { background: var(--accent-dim); color: var(--accent-text); }
+
+/* Botão btn-danger (usado no modal de confirmação) */
+.btn-danger {
+  background: var(--danger); color: #fff;
+  border-color: var(--danger);
+}
+.btn-danger:hover { filter: brightness(1.08); }
+.btn-danger:disabled {
+  background: var(--surface-3); color: var(--text-muted); border-color: var(--hairline);
+  cursor: not-allowed; opacity: 0.7;
+}
+
+@media (max-width: 760px) {
+  .client-modal-grid { grid-template-columns: 1fr; }
+  .client-time-row { grid-template-columns: 1fr; gap: 8px; }
+  .client-person-row { grid-template-columns: 1fr; }
+}
+

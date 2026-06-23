@@ -10,6 +10,7 @@
 let me         = null;
 let users      = [];
 let workspaces = [];
+let clients    = [];
 let projects   = [];
 let flows      = [];
 let demands    = [];
@@ -71,6 +72,7 @@ const PAGE_TO_PATH = {
   mine:         '/my-demands',
   capacity:     '/capacity',
   templates:    '/templates',
+  clients:      '/clients',
   projects:     '/projects',
   flows:        '/flows',
   workspaces:   '/workspaces',
@@ -101,6 +103,9 @@ function parseRoute(path) {
   if ((m = p.match(/^\/demands\/new$/)))                    return { page: 'list',         modal: 'demand',  op: 'new' };
   if ((m = p.match(/^\/demands\/([^/]+)\/edit$/)))          return { page: 'list',         modal: 'demand',  op: 'edit', id: m[1] };
   if ((m = p.match(/^\/demands\/([^/]+)$/)))                return { page: 'list',         modal: 'detail',  id: m[1] };
+  if ((m = p.match(/^\/clients\/new$/)))                    return { page: 'clients',      modal: 'client',  op: 'new' };
+  if ((m = p.match(/^\/clients\/([^/]+)\/edit$/)))          return { page: 'clients',      modal: 'client',  op: 'edit', id: m[1] };
+  if ((m = p.match(/^\/clients\/([^/]+)$/)))                return { page: 'clients',      view: 'detail', id: m[1] };
   if ((m = p.match(/^\/projects\/new$/)))                   return { page: 'projects',     modal: 'project', op: 'new' };
   if ((m = p.match(/^\/projects\/([^/]+)$/)))               return { page: 'projects',     modal: 'project', op: 'edit', id: m[1] };
   if ((m = p.match(/^\/flows\/new$/)))                      return { page: 'flows',        modal: 'flow',    op: 'new' };
@@ -144,6 +149,10 @@ function applyRoute() {
     } else if (r.modal === 'demand' && r.op === 'edit' && r.id) {
       detailId = r.id;
       if (typeof editCurrentDemand === 'function') editCurrentDemand();
+    } else if (r.modal === 'client') {
+      if (typeof openClientModal === 'function') openClientModal(r.op === 'edit' ? r.id : null);
+    } else if (r.view === 'detail' && r.page === 'clients' && r.id) {
+      if (typeof openClient === 'function') openClient(r.id);
     } else if (r.modal === 'project') {
       if (typeof openProjectModal === 'function') openProjectModal(r.op === 'edit' ? r.id : null);
     } else if (r.modal === 'flow') {
@@ -270,9 +279,11 @@ function flowById(id)    { return flows.find(f => f.id === id) || null; }
 function wsById(id)      { return workspaces.find(w => w.id === id) || null; }
 
 function wsProjects() { return projects.filter(p => p.workspaceId === activeWs); }
+function wsClients()  { return clients.filter(c => c.workspaceId === activeWs); }
 function wsFlows()    { return flows.filter(f => f.workspaceId === activeWs); }
 function wsDemands()  { return demands.filter(d => d.workspaceId === activeWs); }
 function wsUsers()    { return users.filter(u => u.active !== false && (u.isAdmin || (u.workspaces || []).includes(activeWs))); }
+function clientById(id) { return clients.find(c => c.id === id) || null; }
 
 function stageOf(d) {
   const f = flowById(d.flowId);
@@ -959,7 +970,7 @@ function openModal(id) {
     if (focusable) focusable.focus();
   }, 80);
 }
-const ROUTED_MODAL_IDS = ['detail-modal','demand-modal','project-modal','flow-modal','user-modal','webhook-modal'];
+const ROUTED_MODAL_IDS = ['detail-modal','demand-modal','project-modal','flow-modal','user-modal','webhook-modal','client-modal'];
 function closeModal(id) {
   $(id).classList.remove('open');
   // Para o poll de quase-realtime quando o detalhe é fechado
@@ -1610,13 +1621,14 @@ async function enterApp() {
 
 async function loadAll() {
   const promises = [
-    api('/workspaces'), api('/users'), api('/projects'), api('/flows'), api('/demands'), api('/roles'), api('/templates')
+    api('/workspaces'), api('/users'), api('/clients'), api('/projects'),
+    api('/flows'), api('/demands'), api('/roles'), api('/templates')
   ];
   // Webhooks só para admin
   if (me?.isAdmin) promises.push(api('/webhooks'));
   const results = await Promise.all(promises);
-  [workspaces, users, projects, flows, demands, roles, templates] = results;
-  webhooks = me?.isAdmin ? (results[7] || []) : [];
+  [workspaces, users, clients, projects, flows, demands, roles, templates] = results;
+  webhooks = me?.isAdmin ? (results[8] || []) : [];
   const allowed = workspaces.map(w => w.id);
   if (!activeWs || !allowed.includes(activeWs)) activeWs = allowed[0] || null;
   localStorage.setItem('fluxo_ws', activeWs || '');
@@ -1689,8 +1701,9 @@ function renderSidebarUser() {
 
 const PAGE_TITLES = {
   dashboard: 'Dashboard', list: 'Demandas', mine: 'Minhas Demandas',
-  projects: 'Projetos', flows: 'Fluxos de Demanda', workspaces: 'Workspaces',
-  users: 'Usuários', profile: 'Meu Perfil'
+  clients: 'Clientes', projects: 'Projetos', flows: 'Fluxos de Demanda',
+  workspaces: 'Workspaces', users: 'Usuários', profile: 'Meu Perfil',
+  capacity: 'Capacidade', templates: 'Templates', integrations: 'Integrações'
 };
 function goPage(page) {
   if ((page === 'flows' || page === 'users' || page === 'workspaces' || page === 'integrations') && !me.isAdmin) return;
@@ -1731,6 +1744,7 @@ function renderCurrent() {
     case 'capacity':   renderCapacity(); break;
     case 'templates':  renderTemplates(); break;
     case 'integrations': renderIntegrations(); break;
+    case 'clients':    renderClients(); break;
     case 'projects':   renderProjects(); break;
     case 'flows':      renderFlows(); break;
     case 'workspaces': renderWorkspaces(); break;
@@ -2920,10 +2934,25 @@ function fmtYMD(y, m, d) {
 }
 
 /* ─── MODAL: NOVA / EDITAR DEMANDA ─── */
+/* Fluxos disponíveis pra um projeto, na nova arquitetura por cliente:
+   1. Fluxos exclusivos desse projetId (caso especial — fluxo amarrado a 1 projeto)
+   2. Fluxos do MESMO CLIENTE do projeto (via field `client`)
+   3. Fluxos "Geral" do workspace (sem cliente) — sempre disponíveis */
 function flowsForProject(projectId) {
-  const exclusive = wsFlows().filter(f => f.projectId === projectId);
-  if (exclusive.length) return exclusive;
-  return wsFlows().filter(f => !f.projectId); // fluxos gerais do workspace
+  const proj = projectById(projectId);
+  const projClient = (proj?.client || '').trim().toLowerCase();
+  const all = wsFlows();
+  const exclusive = all.filter(f => f.projectId === projectId);
+  const byClient = projClient
+    ? all.filter(f => !f.projectId && (f.client || '').trim().toLowerCase() === projClient)
+    : [];
+  const general = all.filter(f => !f.projectId && !(f.client || '').trim());
+  // Dedup mantendo ordem: exclusive > client-specific > general
+  const seen = new Set();
+  return [...exclusive, ...byClient, ...general].filter(f => {
+    if (seen.has(f.id)) return false;
+    seen.add(f.id); return true;
+  });
 }
 function onDemandProjectChange() {
   const pid = $('f-project').value;
@@ -4956,12 +4985,11 @@ function handleProjectAvatar(ev) {
   img.src = URL.createObjectURL(file);
   ev.target.value = '';
 }
-function openProjectModal(id) {
+function openProjectModal(id, presetClientId) {
   editingProjectId = id || null;
   $('project-modal-title').textContent = id ? 'Editar Projeto' : 'Novo Projeto';
   const p = id ? projectById(id) : null;
   $('p-name').value = p?.name || '';
-  $('p-client').value = p?.client || '';
   $('p-color').value = p?.color || '#7A00FF';
   $('p-active').checked = p ? p.active !== false : true;
   projAvatarData = p?.avatar || null;
@@ -4980,120 +5008,46 @@ function openProjectModal(id) {
   $('p-workspace').innerHTML = workspaces.map(w =>
     `<option value="${w.id}" ${(p ? p.workspaceId : activeWs) === w.id ? 'selected' : ''}>${esc(w.name)}</option>`
   ).join('');
-  renderClientCombo(); // popula o dropdown rico (substitui o datalist nativo)
+
+  // Cliente: dropdown SÓ de clientes existentes (não cria mais auto).
+  // Edição: trava no clientId atual. Criação a partir do detalhe do cliente: trava no preset.
+  const sel = $('p-client-select');
+  const hint = $('p-client-hint');
+  const wsId = (p ? p.workspaceId : activeWs);
+  const activeClients = clients.filter(c => c.workspaceId === wsId && c.active !== false)
+                              .sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+  const currentCid = p?.clientId || presetClientId || '';
+  const lockedToClient = !!(p?.clientId || presetClientId);
+
+  if (!activeClients.length) {
+    sel.innerHTML = `<option value="">— Nenhum cliente cadastrado —</option>`;
+    sel.disabled = true;
+    hint.style.display = '';
+    hint.innerHTML = `Crie um cliente em <a href="#" onclick="event.preventDefault(); closeModal('project-modal'); goPage('clients'); openClientModal(null);">Clientes</a> antes de adicionar projetos.`;
+  } else {
+    sel.innerHTML = (currentCid && !activeClients.find(c => c.id === currentCid) && clientById(currentCid)
+                     ? `<option value="${currentCid}">${esc(clientById(currentCid).name)} (arquivado)</option>` : '')
+      + (lockedToClient ? '' : `<option value="">— Selecione um cliente —</option>`)
+      + activeClients.map(c => `<option value="${c.id}" ${c.id === currentCid ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+    sel.disabled = lockedToClient;
+    if (lockedToClient) {
+      hint.style.display = '';
+      hint.textContent = 'Projeto vinculado a este cliente.';
+    } else {
+      hint.style.display = 'none';
+    }
+  }
+
   openModal('project-modal');
   navPush(id ? '/projects/' + id : '/projects/new');
 }
 
-/* ─── COMBOBOX DE CLIENTE NO MODAL DE PROJETO ───
-   Híbrido: o usuário pode digitar um cliente NOVO (vira valor livre) OU
-   abrir o dropdown e escolher um existente. Cada opção mostra a "cara" dos
-   projetos vinculados àquele cliente — avatar/cor + nomes dos projetos.
-   Pattern análogo ao Linear/Stripe — input livre + autocomplete rico. */
-let _clientComboIdx = -1;
-let _clientComboList = [];
-
-/* Agrupa projetos por cliente. Retorna lista ordenada A-Z com metadados. */
-function clientGroups() {
-  const groups = new Map();
-  for (const p of projects) {
-    if (!p.client) continue;
-    if (!groups.has(p.client)) groups.set(p.client, { name: p.client, projects: [] });
-    groups.get(p.client).projects.push(p);
-  }
-  return [...groups.values()].sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
-}
-
-function renderClientCombo() {
-  const menu = $('p-client-menu');
-  if (!menu) return;
-  const q = norm(($('p-client').value || '').trim());
-  const all = clientGroups();
-  const filtered = q ? all.filter(g => norm(g.name).includes(q)) : all;
-  _clientComboList = filtered;
-  _clientComboIdx = -1;
-  if (!filtered.length) {
-    menu.innerHTML = q
-      ? `<div class="combobox-empty">Nenhum cliente existente casa. <strong>Enter</strong> usa "${esc(q)}" como novo.</div>`
-      : `<div class="combobox-empty">Nenhum cliente cadastrado ainda. Digite acima pra criar.</div>`;
-    return;
-  }
-  menu.innerHTML = filtered.map((g, i) => {
-    return `<div class="combobox-item" data-i="${i}" onmouseenter="setClientComboActive(${i})" onclick="pickClient('${esc(g.name).replace(/'/g,"\\'")}')">
-      <div class="combobox-item-name">${esc(g.name)}</div>
-    </div>`;
-  }).join('');
-  paintIcons();
-}
-
-function openClientDropdown() {
-  const combo = $('p-client-combo');
-  if (!combo) return;
-  renderClientCombo();
-  combo.classList.add('open');
-}
-function closeClientDropdown() {
-  const combo = $('p-client-combo');
-  if (combo) combo.classList.remove('open');
-}
-function toggleClientDropdown() {
-  const combo = $('p-client-combo');
-  if (combo.classList.contains('open')) closeClientDropdown();
-  else { $('p-client').focus(); openClientDropdown(); }
-}
-function onClientInput() {
-  renderClientCombo();
-  $('p-client-combo').classList.add('open');
-}
-function onClientKey(e) {
-  const combo = $('p-client-combo');
-  const isOpen = combo && combo.classList.contains('open');
-  if (e.key === 'ArrowDown') {
-    e.preventDefault();
-    if (!isOpen) { openClientDropdown(); return; }
-    _clientComboIdx = Math.min(_clientComboList.length - 1, _clientComboIdx + 1);
-    paintClientComboActive();
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault();
-    _clientComboIdx = Math.max(-1, _clientComboIdx - 1);
-    paintClientComboActive();
-  } else if (e.key === 'Enter') {
-    if (isOpen && _clientComboIdx >= 0 && _clientComboList[_clientComboIdx]) {
-      e.preventDefault();
-      pickClient(_clientComboList[_clientComboIdx].name);
-    } else {
-      // Deixa o Enter natural — usuário tá criando cliente novo via texto livre
-      closeClientDropdown();
-    }
-  } else if (e.key === 'Escape') {
-    if (isOpen) { e.preventDefault(); closeClientDropdown(); }
-  }
-}
-function setClientComboActive(i) {
-  _clientComboIdx = i;
-  paintClientComboActive();
-}
-function paintClientComboActive() {
-  const items = document.querySelectorAll('#p-client-menu .combobox-item');
-  items.forEach((it, i) => it.classList.toggle('active', i === _clientComboIdx));
-  const act = items[_clientComboIdx];
-  if (act && act.scrollIntoView) act.scrollIntoView({ block: 'nearest' });
-}
-function pickClient(name) {
-  $('p-client').value = name;
-  closeClientDropdown();
-  $('p-client').focus();
-}
-
-/* Fecha o combobox ao clicar fora */
-document.addEventListener('click', (e) => {
-  const combo = document.getElementById('p-client-combo');
-  if (!combo || !combo.classList.contains('open')) return;
-  if (!combo.contains(e.target)) closeClientDropdown();
-});
 async function saveProject() {
+  const clientId = $('p-client-select').value;
+  if (!clientId) { toast('Selecione um cliente cadastrado.', 'error'); return; }
   const payload = {
-    name: $('p-name').value, client: $('p-client').value,
+    name: $('p-name').value,
+    clientId,
     color: $('p-color').value, active: $('p-active').checked,
     workspaceId: $('p-workspace').value,
     avatar: projAvatarData
@@ -5103,7 +5057,10 @@ async function saveProject() {
     else await api('/projects', 'POST', payload);
     closeModal('project-modal');
     toast(editingProjectId ? 'Projeto atualizado!' : 'Projeto criado!');
+    const ctxClientId = currentClientId;
     await refreshData();
+    // Se o usuário tá vendo o painel do cliente, re-renderiza pra mostrar o novo projeto
+    if (ctxClientId) renderClientDetail(ctxClientId);
   } catch (e) { toast(e.message, 'error'); }
 }
 async function duplicateProject(id) {
@@ -5115,31 +5072,175 @@ async function duplicateProject(id) {
 }
 
 /* ─── FLUXOS (admin) ─── */
-function renderFlows() {
+/* ─── FLUXOS — Nova arquitetura: clientes → fluxos por cliente ─── */
+let currentClientView = null;       // cliente sendo visualizado em fluxos-view-detail (string ou '__general__')
+let clientFlowSortKey = 'name';
+let clientFlowSortDir = 1;
+
+/* Helper: agrupa fluxos por cliente usando a entidade Client (clientId).
+   Fluxos sem clientId ficam no grupo '__general__'. O `client` (string)
+   é usado como fallback durante a migração. */
+function flowGroupsByClient() {
   const allF = wsFlows();
-  // Populate filters
-  const projList = wsProjects().filter(p => p.active !== false)
-    .sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
-  const fpSel = $('flow-f-project');
-  const fpPrev = fpSel.value;
-  fpSel.innerHTML = '<option value="">Todos os projetos</option>' + projList.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
-  if ([...fpSel.options].some(o => o.value === fpPrev)) fpSel.value = fpPrev;
-  const types = [...new Set(allF.map(f => f.demandType).filter(Boolean))].sort((a, b) => norm(a).localeCompare(norm(b)));
-  const ftSel = $('flow-f-type');
-  const ftPrev = ftSel.value;
-  ftSel.innerHTML = '<option value="">Todos os tipos</option>' + types.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
-  if ([...ftSel.options].some(o => o.value === ftPrev)) ftSel.value = ftPrev;
+  const groups = new Map();
+  for (const f of allF) {
+    let key, label;
+    if (f.clientId) {
+      const c = clientById(f.clientId);
+      key = c ? c.id : '__general__';
+      label = c ? c.name : 'Geral';
+    } else if (f.client && f.client.trim()) {
+      // Fallback: tenta achar a entidade pelo nome (string legado)
+      const c = wsClients().find(x => (x.name || '').toLowerCase() === f.client.trim().toLowerCase());
+      key = c ? c.id : '__general__';
+      label = c ? c.name : f.client.trim();
+    } else {
+      key = '__general__';
+      label = 'Geral';
+    }
+    if (!groups.has(key)) groups.set(key, { client: key, label, flows: [] });
+    groups.get(key).flows.push(f);
+  }
+  return [...groups.values()];
+}
 
-  applyFilterDropdown('flow-f-project', { projectIcon: true });
-  applyFilterDropdown('flow-f-type');
+function renderFlows() {
+  // Reseta pra view de clientes ao entrar na página
+  $('flows-view-clients').style.display = '';
+  $('flows-view-detail').style.display = 'none';
+  currentClientView = null;
 
-  // Filter
-  const q = norm($('flow-search').value);
-  const fp = $('flow-f-project').value;
-  const ft = $('flow-f-type').value;
-  let list = allF.filter(f => {
+  // Constrói cards a partir de TODOS os clientes ativos do workspace,
+  // não só dos que já têm fluxos. Quem ainda não tem fluxo aparece com
+  // contagem 0, pronto pra criar o primeiro. Mais 1 card "Geral" pra
+  // fluxos workspace-wide (sem clientId).
+  const allF = wsFlows();
+  const allC = wsClients().filter(c => c.active !== false);
+  const groups = [];
+  // Card "Geral" — fluxos sem clientId
+  const generalFlows = allF.filter(f => !f.clientId);
+  groups.push({ key: '__general__', label: 'Geral', color: null, avatar: null, flows: generalFlows });
+  // Um card por cliente cadastrado
+  for (const c of allC) {
+    const cFlows = allF.filter(f => f.clientId === c.id);
+    groups.push({ key: c.id, label: c.name, color: c.color, avatar: c.avatar, flows: cFlows });
+  }
+
+  // Popula select de filtro com clientes cadastrados (não os derivados de fluxos)
+  const fcSel = $('flow-f-client');
+  if (fcSel) {
+    const prev = fcSel.value;
+    const opts = allC.slice().sort((a, b) => norm(a.name).localeCompare(norm(b.name)))
+      .map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+    fcSel.innerHTML = '<option value="">Todos os clientes</option>' + opts;
+    if ([...fcSel.options].some(o => o.value === prev)) fcSel.value = prev;
+    applyFilterDropdown('flow-f-client');
+  }
+
+  // Filtra busca + cliente
+  const q = norm(($('flow-search').value || '').trim());
+  const fc = fcSel ? fcSel.value : '';
+  let list = groups.filter(g => {
+    if (q && !norm(g.label).includes(q)) return false;
+    if (fc && g.key !== fc) return false;
+    return true;
+  });
+
+  // Sort: "Geral" sempre primeiro, depois alfabético
+  list.sort((a, b) => {
+    if (a.key === '__general__') return -1;
+    if (b.key === '__general__') return 1;
+    return norm(a.label).localeCompare(norm(b.label));
+  });
+
+  const grid = $('flow-clients-grid');
+  if (!list.length) {
+    grid.innerHTML = emptyState('Nenhum cliente encontrado',
+      'Cadastre um cliente na aba "Clientes" pra começar.', 'flow');
+    paintIcons();
+    return;
+  }
+
+  grid.innerHTML = list.map(g => {
+    let avatarHtml;
+    if (g.key === '__general__') {
+      avatarHtml = `<div class="flow-card-avatar" style="background:var(--surface-3);color:var(--text-dim)"><i data-lucide="layers" class="ic-sm"></i></div>`;
+    } else if (g.avatar) {
+      avatarHtml = `<div class="flow-card-avatar" style="background-image:url('${g.avatar}');background-size:cover;background-position:center"></div>`;
+    } else {
+      const color = g.color || '#7A00FF';
+      const letter = g.label.charAt(0).toUpperCase();
+      avatarHtml = `<div class="flow-card-avatar" style="background:${hexDim(color)};color:${color}">${esc(letter)}</div>`;
+    }
+    const subLabel = g.flows.length === 0 ? 'Sem fluxos · clique pra criar' : `${g.flows.length} fluxo${g.flows.length === 1 ? '' : 's'}`;
+    return `<div class="flow-card" onclick="openClientFlows('${esc(g.key).replace(/'/g, "\\'")}')">
+      ${avatarHtml}
+      <div class="flow-card-name">${esc(g.label)}</div>
+      <div class="flow-card-sub">${esc(subLabel)}</div>
+    </div>`;
+  }).join('');
+  paintIcons();
+}
+
+/* Abre a view de fluxos de um cliente específico */
+function openClientFlows(client) {
+  currentClientView = client;
+  $('flows-view-clients').style.display = 'none';
+  $('flows-view-detail').style.display = '';
+  // Reset filtros da subview
+  const ds = $('flow-detail-search'); if (ds) ds.value = '';
+  const dt = $('flow-detail-type'); if (dt) dt.value = '';
+  renderClientFlows(client);
+}
+function closeClientFlows() {
+  currentClientView = null;
+  $('flows-view-clients').style.display = '';
+  $('flows-view-detail').style.display = 'none';
+  renderFlows();
+}
+function setClientFlowSort(key) {
+  if (clientFlowSortKey === key) clientFlowSortDir *= -1;
+  else { clientFlowSortKey = key; clientFlowSortDir = 1; }
+  document.querySelectorAll('.flow-sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === key));
+  renderClientFlows(currentClientView);
+}
+
+function renderClientFlows(client) {
+  if (!client) return;
+  // `client` aqui é o id do Client entity (ou '__general__'). Pega fluxos por clientId.
+  const allF = wsFlows();
+  let flows, label;
+  if (client === '__general__') {
+    flows = allF.filter(f => !f.clientId);
+    label = 'Geral';
+  } else {
+    const c = clientById(client);
+    if (!c) { closeClientFlows(); return; }
+    flows = allF.filter(f => f.clientId === client);
+    label = c.name;
+  }
+
+  // Breadcrumb
+  const bc = $('flow-detail-breadcrumb');
+  if (bc) {
+    bc.innerHTML = `<span style="color:var(--text-muted);font-weight:500;text-transform:uppercase;letter-spacing:0.05em;font-size:11px">Fluxos de demanda · </span><span>${esc(label)}</span>`;
+  }
+
+  // Popula select de tipo
+  const types = [...new Set(flows.map(f => f.demandType).filter(Boolean))].sort();
+  const dt = $('flow-detail-type');
+  if (dt) {
+    const prev = dt.value;
+    dt.innerHTML = '<option value="">Todos os tipos</option>' + types.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    if ([...dt.options].some(o => o.value === prev)) dt.value = prev;
+    applyFilterDropdown('flow-detail-type');
+  }
+
+  // Filtra
+  const q = norm(($('flow-detail-search').value || '').trim());
+  const ft = dt ? dt.value : '';
+  let list = flows.filter(f => {
     if (q && !norm(f.name).includes(q)) return false;
-    if (fp && f.projectId !== fp) return false;
     if (ft && f.demandType !== ft) return false;
     return true;
   });
@@ -5147,58 +5248,100 @@ function renderFlows() {
   // Sort
   list.sort((a, b) => {
     let va, vb;
-    if (flowSortKey === 'name')     { va = norm(a.name); vb = norm(b.name); }
-    else if (flowSortKey === 'project') {
-      const pa = a.projectId ? projectById(a.projectId)?.name || '' : '';
-      const pb = b.projectId ? projectById(b.projectId)?.name || '' : '';
-      va = norm(pa); vb = norm(pb);
+    if (clientFlowSortKey === 'type') { va = norm(a.demandType || ''); vb = norm(b.demandType || ''); }
+    else if (clientFlowSortKey === 'modified') {
+      // Sem campo updatedAt explícito — usa createdAt como proxy (mais recente primeiro)
+      va = a.createdAt || ''; vb = b.createdAt || '';
+      return (vb < va ? -1 : vb > va ? 1 : 0) * clientFlowSortDir;
     }
-    else if (flowSortKey === 'type')    { va = norm(a.demandType || ''); vb = norm(b.demandType || ''); }
-    else if (flowSortKey === 'demands') { va = demands.filter(d => d.flowId === a.id).length; vb = demands.filter(d => d.flowId === b.id).length; }
     else { va = norm(a.name); vb = norm(b.name); }
-    return (va < vb ? -1 : va > vb ? 1 : 0) * flowSortDir;
+    return (va < vb ? -1 : va > vb ? 1 : 0) * clientFlowSortDir;
   });
 
-  $('flows-table-body').innerHTML = list.length ? list.map(f => {
+  const grid = $('flow-detail-grid');
+  if (!list.length) {
+    grid.innerHTML = emptyState('Nenhum fluxo neste cliente',
+      'Clique em "Novo Fluxo" pra criar o primeiro.', 'flow');
+    paintIcons();
+    return;
+  }
+
+  grid.innerHTML = list.map(f => {
     const count = demands.filter(d => d.flowId === f.id).length;
-    const proj = f.projectId ? projectById(f.projectId) : null;
-    return `<tr class="row-hover-actions">
-      <td style="font-weight:600">${esc(f.name)}</td>
-      <td>${proj ? esc(proj.name) : '<span style="color:var(--text-muted)">Geral</span>'}</td>
-      <td>${esc(f.demandType || '—')}</td>
-      <td>${count}</td>
-      <td>
-        <div class="row-actions">
-          <button class="detail-icon-btn" title="Editar" onclick="openFlowModal('${f.id}')"><i data-lucide="pencil" class="ic-sm"></i></button>
-          <button class="detail-icon-btn" title="Duplicar" onclick="openDuplicateFlow('${f.id}')"><i data-lucide="copy" class="ic-sm"></i></button>
-          <button class="detail-icon-btn danger" title="Excluir" onclick="deleteFlow('${f.id}')"><i data-lucide="trash-2" class="ic-sm"></i></button>
-        </div>
-      </td>
-    </tr>`;
-  }).join('') : `<tr><td colspan="5">${emptyState('Nenhum fluxo encontrado', 'Ajuste os filtros ou crie um novo fluxo.', 'flow')}</td></tr>`;
+    const iconHtml = f.icon
+      ? `<div class="flow-card-icon" style="background-image:url('${f.icon}');background-size:cover;background-position:center"></div>`
+      : `<div class="flow-card-icon flow-card-icon--placeholder"><i data-lucide="workflow" class="ic-sm"></i></div>`;
+    return `<div class="flow-card flow-card-flow" onclick="openFlowModal('${f.id}')">
+      ${iconHtml}
+      <div class="flow-card-actions" onclick="event.stopPropagation()">
+        <button class="detail-icon-btn" title="Duplicar" onclick="openDuplicateFlow('${f.id}')"><i data-lucide="copy" class="ic-xs"></i></button>
+        <button class="detail-icon-btn danger" title="Excluir" onclick="deleteFlow('${f.id}')"><i data-lucide="trash-2" class="ic-xs"></i></button>
+      </div>
+      <div class="flow-card-name">${esc(f.name)}</div>
+      <div class="flow-card-sub">${esc(f.demandType || 'Sem tipo')} · ${count} demanda${count === 1 ? '' : 's'}</div>
+    </div>`;
+  }).join('');
+  paintIcons();
 }
-function sortFlowsBy(key) {
-  if (flowSortKey === key) flowSortDir *= -1;
-  else { flowSortKey = key; flowSortDir = 1; }
-  renderFlows();
+
+/* Versão do openFlowModal que pré-preenche o cliente — usada do botão da subview.
+   `clientKey` agora é o ID do Client (ou '__general__' pra fluxo workspace-wide). */
+function openFlowModalForClient(clientKey) {
+  openFlowModal(null, clientKey === '__general__' ? null : clientKey);
 }
+
+/* Compat — sortFlowsBy não é mais usado mas mantido pra evitar quebra */
+function sortFlowsBy() { /* legacy — substituído por setClientFlowSort */ }
 
 /* Editor de fluxo com etapas arrastáveis */
 let stageRows = [];
 let dragIdx = null;
 
 let flowModalDirty = false;
-function openFlowModal(id) {
+let flowIconData = null;  // data URI/URL do ícone selecionado pra esse modal
+let flowModalClientId = null; // ID do Client em contexto (null = Geral / workspace-wide)
+function openFlowModal(id, presetClientId) {
   editingFlowId = id || null;
   flowModalDirty = false;
-  $('flow-modal-title').textContent = id ? 'Editar Fluxo' : 'Novo Fluxo';
+  const isNew = !id;
   const f = id ? flowById(id) : null;
+  // Contexto: edição usa o clientId do fluxo (fallback no nome legado);
+  // nova usa o preset (subview do cliente). Sempre id de Client entity.
+  if (f) {
+    if (f.clientId) flowModalClientId = f.clientId;
+    else if (f.client) {
+      const c = wsClients().find(x => (x.name || '').toLowerCase() === (f.client || '').toLowerCase());
+      flowModalClientId = c ? c.id : null;
+    } else flowModalClientId = null;
+  } else {
+    flowModalClientId = presetClientId || null;
+  }
+  $('flow-modal-title').textContent = isNew ? 'Novo fluxo' : 'Editar fluxo';
+  const clientEntity = flowModalClientId ? clientById(flowModalClientId) : null;
+  $('flow-modal-subtitle').textContent = clientEntity ? clientEntity.name : 'Geral · disponível pra todos os clientes';
+
   $('fl-name').value = f?.name || '';
   $('fl-type').value = f?.demandType || '';
   $('flowtypes-datalist').innerHTML = [...new Set(flows.map(x => x.demandType).filter(Boolean))]
     .map(t => `<option value="${esc(t)}">`).join('');
-  $('fl-project').innerHTML = '<option value="">— Geral (todos os projetos do workspace) —</option>' +
+
+  // Project picker fica escondido por padrão. Útil só pra fluxos exclusivos
+  // de um projeto específico — caso raro, atalho via console se necessário.
+  $('fl-project-group').style.display = 'none';
+  $('fl-project').innerHTML = '<option value="">— Todos os projetos do cliente —</option>' +
     wsProjects().slice().sort((a,b) => norm(a.name).localeCompare(norm(b.name))).map(p => `<option value="${p.id}" ${f && f.projectId === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+
+  // Ícone customizado: edição carrega o existente; nova fica vazio
+  flowIconData = f?.icon || null;
+  refreshFlowIconPreview();
+
+  // Toggle "Aplicar a todos os projetos": só faz sentido pra nova criação em
+  // contexto de cliente — duplica o fluxo pra cada projeto desse cliente.
+  const applyWrap = $('fl-apply-toggle-wrap');
+  const applyAvailable = isNew && !!flowModalClientId;
+  applyWrap.style.display = applyAvailable ? '' : 'none';
+  $('fl-apply-all').checked = false;
+
   stageRows = f
     ? f.stages.map(s => ({ ...s }))
     : [
@@ -5209,6 +5352,36 @@ function openFlowModal(id) {
   renderStageRows();
   openModal('flow-modal');
   navPush(id ? '/flows/' + id : '/flows/new');
+}
+
+/* ── Ícone customizado do fluxo ── */
+function refreshFlowIconPreview() {
+  const el = $('fl-icon-preview');
+  if (!el) return;
+  if (flowIconData) {
+    el.innerHTML = '';
+    el.style.backgroundImage = `url('${flowIconData}')`;
+    el.style.backgroundSize = 'cover';
+    el.style.backgroundPosition = 'center';
+    el.classList.add('has-icon');
+  } else {
+    el.style.backgroundImage = '';
+    el.classList.remove('has-icon');
+    el.innerHTML = '<span class="flow-icon-label">ícone</span>';
+  }
+}
+function handleFlowIconUpload(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) { toast('Imagem excede 2MB.', 'error'); ev.target.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    flowIconData = e.target.result;
+    refreshFlowIconPreview();
+    flowModalDirty = true;
+  };
+  reader.readAsDataURL(file);
+  ev.target.value = '';
 }
 
 function renderStageRows() {
@@ -5268,20 +5441,33 @@ function stageDragEnd() {
 }
 
 async function saveFlow() {
+  const isNew = !editingFlowId;
+  const applyAll = isNew && !!flowModalClientId && $('fl-apply-all') && $('fl-apply-all').checked;
+  const clientEntity = flowModalClientId ? clientById(flowModalClientId) : null;
   const payload = {
     name: $('fl-name').value,
     demandType: $('fl-type').value,
     projectId: $('fl-project').value || null,
     workspaceId: activeWs,
-    stages: stageRows
+    clientId: flowModalClientId || null,
+    client: clientEntity ? clientEntity.name : null, // mantém legado em sincronia
+    icon: flowIconData || null,
+    stages: stageRows,
+    applyToAll: applyAll
   };
   try {
-    if (editingFlowId) await api('/flows/' + editingFlowId, 'PUT', payload);
-    else await api('/flows', 'POST', payload);
+    const r = editingFlowId
+      ? await api('/flows/' + editingFlowId, 'PUT', payload)
+      : await api('/flows', 'POST', payload);
     closeModal('flow-modal');
     flowModalDirty = false;
-    toast(editingFlowId ? 'Fluxo atualizado!' : 'Fluxo criado!');
+    if (applyAll && r && r.count) {
+      toast(`Fluxo aplicado a ${r.count} projeto${r.count === 1 ? '' : 's'} do cliente "${clientEntity?.name || ''}"!`);
+    } else {
+      toast(editingFlowId ? 'Fluxo atualizado!' : 'Fluxo criado!');
+    }
     await refreshData();
+    if (currentClientView) renderClientFlows(currentClientView);
   } catch (e) { toast(e.message, 'error'); }
 }
 async function deleteFlow(id) {
@@ -6373,6 +6559,456 @@ document.addEventListener('keydown', e => {
     if (!anyModal) { e.preventDefault(); toggleZenMode(); }
   }
 });
+
+/* ─── CLIENTES — Página, detalhe e modais ─── */
+let currentClientId = null;
+let clientStatusFilter = 'all'; // 'all' | 'active' | 'archived'
+let currentClientPeriod = '90';
+let editingClientId = null;
+let clientAvatarData = null;
+let clientModalStatusActive = true;
+
+function setClientStatusFilter(s) {
+  clientStatusFilter = s;
+  document.querySelectorAll('.client-status-btn').forEach(b => b.classList.toggle('active', b.dataset.status === s));
+  renderClients();
+}
+
+function renderClients() {
+  // Reseta pra view de grid
+  $('clients-view-grid').style.display = '';
+  $('clients-view-detail').style.display = 'none';
+  currentClientId = null;
+
+  // Popula select de workspace
+  const fwSel = $('client-f-ws');
+  if (fwSel) {
+    const prev = fwSel.value;
+    const accessibleWs = workspaces.filter(w => me.isAdmin || (me.workspaces || []).includes(w.id));
+    fwSel.innerHTML = '<option value="">Todos os workspaces</option>' +
+      accessibleWs.map(w => `<option value="${w.id}">${esc(w.name)}</option>`).join('');
+    if ([...fwSel.options].some(o => o.value === prev)) fwSel.value = prev;
+    applyFilterDropdown('client-f-ws');
+  }
+
+  // Filtra
+  const q = norm(($('client-search').value || '').trim());
+  const fw = fwSel ? fwSel.value : '';
+  let list = clients.filter(c => {
+    if (me.isAdmin === false && !(me.workspaces || []).includes(c.workspaceId)) return false;
+    if (q && !norm(c.name).includes(q)) return false;
+    if (fw && c.workspaceId !== fw) return false;
+    if (clientStatusFilter === 'active' && c.active === false) return false;
+    if (clientStatusFilter === 'archived' && c.active !== false) return false;
+    return true;
+  });
+
+  // Sort: ativos primeiro, depois alfabético
+  list.sort((a, b) => {
+    const aa = a.active !== false, ba = b.active !== false;
+    if (aa !== ba) return aa ? -1 : 1;
+    return norm(a.name).localeCompare(norm(b.name));
+  });
+
+  const grid = $('clients-grid');
+  if (!list.length) {
+    grid.innerHTML = emptyState('Nenhum cliente encontrado', 'Crie seu primeiro cliente clicando em "Novo Cliente".', 'users');
+    paintIcons();
+    return;
+  }
+
+  grid.innerHTML = list.map(c => {
+    let avatarHtml;
+    if (c.avatar) {
+      avatarHtml = `<div class="client-card-avatar" style="background-image:url('${c.avatar}');background-size:cover;background-position:center"></div>`;
+    } else {
+      const letter = (c.name || 'C').charAt(0).toUpperCase();
+      avatarHtml = `<div class="client-card-avatar" style="background:${hexDim(c.color || '#7A00FF')};color:${c.color || '#7A00FF'}">${esc(letter)}</div>`;
+    }
+    const ws = wsById(c.workspaceId);
+    const projCount = projects.filter(p => p.clientId === c.id).length;
+    const statusBadge = c.active === false
+      ? '<span class="client-card-status client-card-status--archived">Arquivado</span>'
+      : '<span class="client-card-status client-card-status--active">Ativo</span>';
+    return `<div class="flow-card client-card ${c.active === false ? 'is-archived' : ''}" onclick="openClient('${c.id}')">
+      ${avatarHtml}
+      <div class="flow-card-name">${esc(c.name)}</div>
+      <div class="flow-card-sub">${esc(ws?.name || '—')}</div>
+      <div class="flow-card-sub" style="font-size:11px;color:var(--text-muted)">${projCount} projeto${projCount === 1 ? '' : 's'}</div>
+      ${statusBadge}
+    </div>`;
+  }).join('');
+  paintIcons();
+}
+
+function openClient(id) {
+  const c = clientById(id);
+  if (!c) { toast('Cliente não encontrado', 'error'); renderClients(); return; }
+  currentClientId = id;
+  $('clients-view-grid').style.display = 'none';
+  $('clients-view-detail').style.display = '';
+  renderClientDetail(id);
+  navPush('/clients/' + id);
+}
+function closeClientDetail() {
+  currentClientId = null;
+  $('clients-view-grid').style.display = '';
+  $('clients-view-detail').style.display = 'none';
+  navPush('/clients');
+  renderClients();
+}
+
+function renderClientDetail(id) {
+  const c = clientById(id);
+  if (!c) return;
+
+  // Breadcrumb
+  const bc = $('client-detail-breadcrumb');
+  if (bc) {
+    bc.innerHTML = `<span style="color:var(--text-muted);font-weight:500;text-transform:uppercase;letter-spacing:0.05em;font-size:11px">Clientes cadastrados · </span><span>${esc(c.name)}</span>`;
+  }
+
+  // PROJETOS
+  const projs = projects.filter(p => p.clientId === id);
+  const projGrid = $('client-detail-projects');
+  if (!projs.length) {
+    projGrid.innerHTML = `<div style="grid-column:1/-1">${emptyState('Nenhum projeto', 'Crie o primeiro projeto deste cliente.', 'inbox')}</div>`;
+  } else {
+    projGrid.innerHTML = projs.map(p => {
+      const statusLabel = p.active === false ? 'Arquivado' : 'Ativo';
+      const statusClass = p.active === false ? 'client-card-status--archived' : 'client-card-status--active';
+      const avatar = p.avatar
+        ? `<div class="client-card-avatar" style="background-image:url('${p.avatar}');background-size:cover;background-position:center"></div>`
+        : `<div class="client-card-avatar" style="background:${hexDim(p.color || '#7A00FF')};color:${p.color || '#7A00FF'}">${esc((p.name || 'P').charAt(0).toUpperCase())}</div>`;
+      return `<div class="flow-card" onclick="openProjectModal('${p.id}')">
+        ${avatar}
+        <div class="flow-card-name">${esc(p.name)}</div>
+        <div class="flow-card-sub">${esc(statusLabel)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // PESSOAS — uma linha por função cadastrada, com select de usuário padrão pro cliente.
+  // Persiste em c.roleAssignments: { [roleName]: userId | null }.
+  const peopleEl = $('client-detail-people');
+  const allRoles = (roles || []).slice().sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+  const assigns = c.roleAssignments || {};
+  // Usuários candidatos pra cada função: filtra por workspace acessível + função
+  const wsUsers = users.filter(u =>
+    (u.workspaces || []).includes(c.workspaceId) || u.isAdmin
+  );
+  if (!allRoles.length) {
+    peopleEl.innerHTML = `<div class="client-people-empty">Nenhuma função cadastrada. Crie funções em <a href="#" onclick="event.preventDefault(); goPage('users');">Usuários</a> para definir responsáveis padrão por cliente.</div>`;
+  } else {
+    peopleEl.innerHTML = allRoles.map(role => {
+      const candidates = wsUsers.filter(u => (u.role || '') === role.name);
+      const currentUid = assigns[role.name] || '';
+      const opts = [`<option value="">— Sem responsável padrão —</option>`]
+        .concat(candidates.map(u => `<option value="${u.id}" ${u.id === currentUid ? 'selected' : ''}>${esc(u.name)}</option>`))
+        .join('');
+      const currentUser = currentUid ? userById(currentUid) : null;
+      const previewAvatar = currentUser ? avatarHTML(currentUser, 'avatar') : `<div class="avatar" style="background:var(--surface-2);color:var(--text-muted);display:flex;align-items:center;justify-content:center"><i data-lucide="user" class="ic-sm"></i></div>`;
+      return `<div class="client-person-row">
+        <div class="client-person-role">${esc(role.name)}</div>
+        <div class="client-person-name">${previewAvatar}</div>
+        <select class="form-control" onchange="setClientRoleAssignment('${id}', '${esc(role.name).replace(/'/g, "\\'")}', this.value)" ${candidates.length ? '' : 'disabled'}>
+          ${candidates.length ? opts : `<option value="">Sem usuários nesta função</option>`}
+        </select>
+      </div>`;
+    }).join('');
+  }
+
+  // TEMPO DEDICADO
+  renderClientTimeBlock(id);
+  paintIcons();
+}
+
+function setClientTimePeriod(p) {
+  currentClientPeriod = p;
+  document.querySelectorAll('.client-time-period').forEach(b => b.classList.toggle('active', b.dataset.period === p));
+  if (currentClientId) renderClientTimeBlock(currentClientId);
+}
+
+async function setClientRoleAssignment(clientId, roleName, userId) {
+  const c = clientById(clientId);
+  if (!c) return;
+  const next = Object.assign({}, c.roleAssignments || {});
+  next[roleName] = userId || null;
+  try {
+    await api('/clients/' + clientId, 'PUT', { roleAssignments: next });
+    // Atualiza cache local sem refetch completo (mudança trivial)
+    c.roleAssignments = next;
+    renderClientDetail(clientId);
+    toast('Responsável padrão atualizado.');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function renderClientTimeBlock(clientId) {
+  const projs = projects.filter(p => p.clientId === clientId);
+  const projIds = new Set(projs.map(p => p.id));
+  // Filtra time entries
+  const today0 = new Date(); today0.setHours(0,0,0,0);
+  let fromYmd = null;
+  if (currentClientPeriod !== 'all') {
+    const days = parseInt(currentClientPeriod, 10) || 90;
+    const from = new Date(today0); from.setDate(from.getDate() - (days - 1));
+    fromYmd = from.toISOString().slice(0,10);
+  }
+  const inRange = (e) => {
+    if (!fromYmd) return true;
+    const when = ((e.start || e.createdAt || '') + '').slice(0,10);
+    return when >= fromYmd;
+  };
+  let totalHours = 0;
+  const byUser = new Map();
+  const byDay = new Map();
+  demands.forEach(d => {
+    if (!projIds.has(d.projectId)) return;
+    (d.timeEntries || []).forEach(e => {
+      if (!inRange(e)) return;
+      const h = Number(e.hours) || 0;
+      totalHours += h;
+      if (e.userId) byUser.set(e.userId, (byUser.get(e.userId) || 0) + h);
+      const day = ((e.start || e.createdAt || '') + '').slice(0,10);
+      if (day) byDay.set(day, (byDay.get(day) || 0) + h);
+    });
+  });
+
+  $('client-time-value').textContent = fmtHours(totalHours);
+
+  // Lista de usuários — ordenado por horas (decrescente) + barra de progresso
+  const days = currentClientPeriod === 'all' ? 30 : parseInt(currentClientPeriod, 10);
+  let businessDays = 0;
+  for (let i = 0; i < days; i++) {
+    const d = new Date(today0); d.setDate(d.getDate() - i);
+    if (d.getDay() !== 0 && d.getDay() !== 6) businessDays++;
+  }
+  const capacity = businessDays * 8;
+  const rows = [...byUser.entries()]
+    .map(([uid, h]) => ({ u: userById(uid), hours: h }))
+    .filter(r => r.u)
+    .sort((a, b) => b.hours - a.hours);
+  const rowsEl = $('client-time-rows');
+  if (!rows.length) {
+    rowsEl.innerHTML = `<div class="client-people-empty">Ninguém apontou horas nos projetos deste cliente no período selecionado.</div>`;
+  } else {
+    rowsEl.innerHTML = rows.map(r => {
+      const pct = capacity > 0 ? Math.min(150, Math.round((r.hours / capacity) * 100)) : 0;
+      const status = pct >= 100 ? 'overload' : pct >= 75 ? 'high' : pct >= 40 ? 'medium' : 'low';
+      return `<div class="client-time-row">
+        <div class="client-time-user">
+          ${avatarHTML(r.u, 'avatar')}
+          <div>
+            <div class="client-time-user-name">${esc(r.u.name)}</div>
+            <div class="client-time-user-role">${esc(r.u.role || '—')}</div>
+          </div>
+        </div>
+        <div class="client-time-meta">
+          <span class="client-time-pct">${pct}%</span>
+          <span class="client-time-hh">${fmtHours(r.hours)} / ${capacity}h</span>
+        </div>
+        <div class="capacity-bar-track" style="flex:1;max-width:none">
+          <div class="capacity-bar-fill ${status}" style="width:${Math.min(100, pct)}%"></div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // Chart: linha de horas por dia (últimos N dias)
+  const chartEl = $('client-time-chart');
+  if (chartEl) {
+    const buckets = [];
+    const dayCount = currentClientPeriod === 'all' ? 30 : Math.min(90, parseInt(currentClientPeriod, 10) || 30);
+    for (let i = dayCount - 1; i >= 0; i--) {
+      const d = new Date(today0); d.setDate(d.getDate() - i);
+      const ymd = d.toISOString().slice(0,10);
+      buckets.push({ ymd, hours: byDay.get(ymd) || 0, day: d });
+    }
+    const max = Math.max(1, ...buckets.map(b => b.hours));
+    const w = 760, h = 180, padL = 30, padR = 16, padT = 14, padB = 22;
+    const innerW = w - padL - padR;
+    const innerH = h - padT - padB;
+    const xStep = innerW / Math.max(1, buckets.length - 1);
+    const points = buckets.map((b, i) => [padL + i * xStep, padT + innerH - (b.hours / max) * innerH]);
+    const linePath = points.length ? 'M ' + points.map(p => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' L ') : '';
+    const areaPath = points.length ? `${linePath} L ${points[points.length-1][0].toFixed(1)} ${padT + innerH} L ${points[0][0].toFixed(1)} ${padT + innerH} Z` : '';
+    const peak = Math.ceil(max);
+    chartEl.innerHTML = `<div class="client-chart-wrap">
+      <div class="client-chart-head">
+        <div class="client-chart-title">Horas</div>
+        <div class="client-chart-value">${fmtHours(totalHours)} <span class="client-chart-delta">no período</span></div>
+      </div>
+      <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:200px;display:block">
+        <defs>
+          <linearGradient id="clientHoursGrad" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stop-color="#3CE3A0" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="#3CE3A0" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <g stroke="rgba(255,255,255,0.05)" stroke-width="1">
+          <line x1="${padL}" y1="${padT}" x2="${w - padR}" y2="${padT}"/>
+          <line x1="${padL}" y1="${padT + innerH/2}" x2="${w - padR}" y2="${padT + innerH/2}"/>
+          <line x1="${padL}" y1="${padT + innerH}" x2="${w - padR}" y2="${padT + innerH}"/>
+        </g>
+        <g fill="var(--text-muted)" font-size="9" font-family="'JetBrains Mono', monospace">
+          <text x="${padL - 6}" y="${padT + 4}" text-anchor="end">${peak}h</text>
+          <text x="${padL - 6}" y="${padT + innerH/2 + 4}" text-anchor="end">${Math.round(peak/2)}h</text>
+          <text x="${padL - 6}" y="${padT + innerH + 4}" text-anchor="end">0</text>
+        </g>
+        ${areaPath ? `<path d="${areaPath}" fill="url(#clientHoursGrad)"/>` : ''}
+        ${linePath ? `<path d="${linePath}" fill="none" stroke="#3CE3A0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>` : ''}
+      </svg>
+    </div>`;
+  }
+}
+
+/* ─── MODAL: NOVO/EDITAR CLIENTE ─── */
+function openClientModal(id) {
+  editingClientId = id || null;
+  const c = id ? clientById(id) : null;
+  const isNew = !c;
+  $('client-modal-title').textContent = isNew ? 'Novo Cliente' : 'Editar Cliente';
+  $('c-name').value = c?.name || '';
+  $('c-segment').value = c?.segment || '';
+  $('c-drive-files').value = c?.driveFiles || '';
+  $('c-brand-assets').value = c?.brandAssets || '';
+  $('c-guidelines').value = c?.guidelines || '';
+  $('c-color').value = c?.color || '#7A00FF';
+  // Workspace
+  const wsSel = $('c-workspace');
+  const accessibleWs = workspaces.filter(w => me.isAdmin || (me.workspaces || []).includes(w.id));
+  wsSel.innerHTML = accessibleWs.map(w =>
+    `<option value="${w.id}" ${(c ? c.workspaceId : activeWs) === w.id ? 'selected' : ''}>${esc(w.name)}</option>`
+  ).join('');
+  // Avatar
+  clientAvatarData = c?.avatar || null;
+  refreshClientAvatarPreview();
+  // Datalist de segmentos existentes
+  const segs = [...new Set(clients.map(x => x.segment).filter(Boolean))].sort();
+  $('client-segments-datalist').innerHTML = segs.map(s => `<option value="${esc(s)}">`).join('');
+  // Footer: edit mostra status toggle + excluir
+  $('c-foot-left').style.display = '';
+  $('c-delete-btn').style.display = isNew ? 'none' : '';
+  $('c-status-group').style.display = isNew ? 'none' : '';
+  if (c) {
+    clientModalStatusActive = c.active !== false;
+    refreshClientStatusUI();
+  }
+  openModal('client-modal');
+  navPush(isNew ? '/clients/new' : '/clients/' + id + '/edit');
+}
+function openClientModalEdit() {
+  if (currentClientId) openClientModal(currentClientId);
+}
+function refreshClientAvatarPreview() {
+  const el = $('c-avatar-preview');
+  if (!el) return;
+  if (clientAvatarData) {
+    el.style.backgroundImage = `url('${clientAvatarData}')`;
+    el.style.backgroundSize = 'cover';
+    el.style.backgroundPosition = 'center';
+    el.innerHTML = '';
+    $('c-avatar-remove').style.display = '';
+  } else {
+    el.style.backgroundImage = '';
+    el.innerHTML = '<span style="color:var(--text-muted);font-size:12px">Sem foto</span>';
+    $('c-avatar-remove').style.display = 'none';
+  }
+}
+function handleClientAvatarUpload(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { toast('Imagem excede 5MB.', 'error'); ev.target.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = (e) => { clientAvatarData = e.target.result; refreshClientAvatarPreview(); };
+  reader.readAsDataURL(file);
+  ev.target.value = '';
+}
+function removeClientAvatar() {
+  clientAvatarData = null;
+  refreshClientAvatarPreview();
+}
+function setClientModalStatus(active) {
+  clientModalStatusActive = active;
+  refreshClientStatusUI();
+}
+function refreshClientStatusUI() {
+  document.querySelectorAll('.client-status-pick').forEach(b => {
+    b.classList.toggle('active', (b.dataset.val === 'active') === clientModalStatusActive);
+  });
+}
+async function saveClient() {
+  const name = ($('c-name').value || '').trim();
+  if (!name) { toast('Nome do cliente é obrigatório.', 'error'); return; }
+  const payload = {
+    name,
+    workspaceId: $('c-workspace').value,
+    color: $('c-color').value,
+    segment: $('c-segment').value,
+    driveFiles: $('c-drive-files').value,
+    brandAssets: $('c-brand-assets').value,
+    guidelines: $('c-guidelines').value,
+    avatar: clientAvatarData
+  };
+  if (editingClientId) payload.active = clientModalStatusActive;
+  try {
+    const r = editingClientId
+      ? await api('/clients/' + editingClientId, 'PUT', payload)
+      : await api('/clients', 'POST', payload);
+    closeModal('client-modal');
+    toast(editingClientId ? 'Cliente atualizado!' : 'Cliente criado!');
+    await refreshData();
+    // Se estava na tela de detalhe, re-renderiza
+    if (currentClientId) renderClientDetail(currentClientId);
+  } catch (e) {
+    toast(e.message || 'Erro ao salvar cliente', 'error');
+  }
+}
+
+/* Exclusão com confirmação (digite o nome) */
+function openClientDeleteConfirm() {
+  if (!editingClientId) return;
+  const c = clientById(editingClientId);
+  if (!c) return;
+  $('client-delete-title').textContent = `Excluir ${c.name}?`;
+  $('client-delete-confirm-text').innerHTML = `Para confirmar, digite <strong>${esc(c.name)}</strong> abaixo:`;
+  $('client-delete-input').value = '';
+  $('client-delete-input').placeholder = c.name;
+  $('client-delete-confirm-btn').disabled = true;
+  $('client-delete-warning').textContent = '';
+  // Aviso se tem projetos vinculados
+  const linked = projects.filter(p => p.clientId === c.id).length;
+  if (linked > 0) {
+    $('client-delete-warning').textContent = `⚠ Este cliente tem ${linked} projeto(s) vinculado(s). Exclua ou mova os projetos antes.`;
+  }
+  openModal('client-delete-modal');
+}
+function updateClientDeleteBtnState() {
+  if (!editingClientId) return;
+  const c = clientById(editingClientId);
+  const typed = ($('client-delete-input').value || '').trim();
+  const linked = projects.filter(p => p.clientId === c.id).length;
+  $('client-delete-confirm-btn').disabled = !(c && typed === c.name && linked === 0);
+}
+async function confirmDeleteClient() {
+  if (!editingClientId) return;
+  try {
+    await api('/clients/' + editingClientId, 'DELETE');
+    closeModal('client-delete-modal');
+    closeModal('client-modal');
+    editingClientId = null;
+    toast('Cliente excluído.', 'warn');
+    await refreshData();
+    closeClientDetail();
+  } catch (e) {
+    toast(e.message || 'Erro ao excluir', 'error');
+  }
+}
+
+/* Atalho: abrir modal de projeto já com o cliente atual pré-selecionado */
+function openProjectModalForCurrentClient() {
+  if (typeof openProjectModal === 'function') openProjectModal(null, currentClientId);
+}
 
 /* ─── START ─── */
 boot();

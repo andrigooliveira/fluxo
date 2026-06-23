@@ -17,7 +17,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ENTITY_TYPES = [
-  'workspaces', 'users', 'projects', 'flows',
+  'workspaces', 'users', 'clients', 'projects', 'flows',
   'demands', 'roles', 'templates', 'webhooks'
 ];
 

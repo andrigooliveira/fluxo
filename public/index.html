@@ -80,9 +80,9 @@
         Capacidade
       </div>
       <div class="nav-section">Configuração</div>
-      <div class="nav-item" data-page="projects" onclick="goPage('projects')">
-        <svg viewBox="0 0 16 16" fill="none"><path d="M1.5 5.5A1.5 1.5 0 013 4h3l1.5 1.5H13A1.5 1.5 0 0114.5 7v5A1.5 1.5 0 0113 13.5H3A1.5 1.5 0 011.5 12V5.5z" stroke="currentColor" stroke-width="1.5"/></svg>
-        Projetos
+      <div class="nav-item" data-page="clients" onclick="goPage('clients')">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M8 8a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 14c.8-2.6 3-4 5.5-4s4.7 1.4 5.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Clientes
       </div>
       <div class="nav-item" data-page="flows" id="nav-flows" onclick="goPage('flows')" style="display:none">
         <svg viewBox="0 0 16 16" fill="none"><circle cx="3" cy="8" r="1.8" stroke="currentColor" stroke-width="1.5"/><circle cx="13" cy="3.5" r="1.8" stroke="currentColor" stroke-width="1.5"/><circle cx="13" cy="12.5" r="1.8" stroke="currentColor" stroke-width="1.5"/><path d="M4.7 7.2l6.5-3M4.7 8.8l6.5 3" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -399,7 +399,74 @@
       </div>
     </div>
 
-    <!-- ── PROJETOS ── -->
+    <!-- ── CLIENTES (substitui Projetos no menu) ── -->
+    <div class="page" id="page-clients">
+      <div class="page-body">
+
+        <!-- VIEW A: grid de clientes -->
+        <div id="clients-view-grid">
+          <div class="filters-bar" style="margin-bottom:18px">
+            <div class="filter-input-wrap">
+              <i data-lucide="search" class="filter-input-icon ic-sm"></i>
+              <input class="filter-input filter-input--with-icon" id="client-search" placeholder="Buscar cliente…" oninput="renderClients()">
+            </div>
+            <select class="filter-select" id="client-f-ws" onchange="renderClients()"><option value="">Todos os workspaces</option></select>
+            <span style="font-size:12px;color:var(--text-muted);margin-left:6px">Situação</span>
+            <div class="client-status-toggle">
+              <button class="btn btn-ghost btn-sm client-status-btn active" data-status="all" onclick="setClientStatusFilter('all')">Todos</button>
+              <button class="btn btn-ghost btn-sm client-status-btn" data-status="active" onclick="setClientStatusFilter('active')">Ativos</button>
+              <button class="btn btn-ghost btn-sm client-status-btn" data-status="archived" onclick="setClientStatusFilter('archived')">Arquivados</button>
+            </div>
+            <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openClientModal()"><i data-lucide="plus" class="ic-sm"></i> Novo Cliente</button>
+          </div>
+          <div class="section-title" style="margin-bottom:16px">Clientes Cadastrados</div>
+          <div class="flow-grid" id="clients-grid"></div>
+        </div>
+
+        <!-- VIEW B: detalhe de um cliente -->
+        <div id="clients-view-detail" style="display:none">
+          <div class="filters-bar" style="margin-bottom:18px;gap:10px">
+            <button class="btn btn-ghost btn-sm" onclick="closeClientDetail()"><i data-lucide="chevron-left" class="ic-sm"></i> Voltar</button>
+            <div style="flex:1"></div>
+            <button class="btn btn-primary btn-sm" id="client-detail-new-project" onclick="openProjectModalForCurrentClient()"><i data-lucide="plus" class="ic-sm"></i> Novo Projeto</button>
+            <button class="btn btn-ghost btn-icon-only" title="Editar cliente" onclick="openClientModalEdit()"><i data-lucide="settings" class="ic-sm"></i></button>
+          </div>
+          <div class="section-title" id="client-detail-breadcrumb" style="margin-bottom:18px"></div>
+
+          <div class="client-detail-section">
+            <div class="client-detail-section-label">PROJETOS</div>
+            <div class="flow-grid" id="client-detail-projects"></div>
+          </div>
+
+          <div class="client-detail-section" style="margin-top:32px">
+            <div class="client-detail-section-label">PESSOAS</div>
+            <div id="client-detail-people"></div>
+          </div>
+
+          <div class="client-detail-section" style="margin-top:32px">
+            <div class="client-detail-section-label">TEMPO DEDICADO</div>
+            <div class="client-time-head">
+              <div class="client-time-total">
+                <span class="client-time-label">HORAS APONTADAS</span>
+                <span class="client-time-value" id="client-time-value">0h</span>
+              </div>
+              <div class="client-time-periods">
+                <button class="btn btn-ghost btn-sm client-time-period" data-period="7" onclick="setClientTimePeriod('7')">Últimos 7 dias</button>
+                <button class="btn btn-ghost btn-sm client-time-period" data-period="14" onclick="setClientTimePeriod('14')">Últimos 14 dias</button>
+                <button class="btn btn-ghost btn-sm client-time-period" data-period="30" onclick="setClientTimePeriod('30')">Últimos 30 dias</button>
+                <button class="btn btn-ghost btn-sm client-time-period active" data-period="90" onclick="setClientTimePeriod('90')">Últimos 90 dias</button>
+                <button class="btn btn-ghost btn-sm client-time-period" data-period="all" onclick="setClientTimePeriod('all')">Desde o início</button>
+              </div>
+            </div>
+            <div id="client-time-rows" style="margin-top:14px"></div>
+            <div id="client-time-chart" style="margin-top:18px"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── PROJETOS (legado — mantido por compat, não acessível pelo menu) ── -->
     <div class="page" id="page-projects">
       <div class="page-body">
         <div class="section-head">
@@ -439,29 +506,40 @@
     <!-- ── FLUXOS (admin) ── -->
     <div class="page" id="page-flows">
       <div class="page-body">
-        <div class="section-head">
-          <div class="section-title">Fluxos de Demanda</div>
-          <button class="btn btn-primary btn-sm" onclick="openFlowModal()">+ Novo Fluxo</button>
+
+        <!-- VIEW A: grid de clientes -->
+        <div id="flows-view-clients">
+          <div class="filters-bar" style="margin-bottom:18px">
+            <div class="filter-input-wrap">
+              <i data-lucide="search" class="filter-input-icon ic-sm"></i>
+              <input class="filter-input filter-input--with-icon" id="flow-search" placeholder="Buscar cliente…" oninput="renderFlows()">
+            </div>
+            <select class="filter-select" id="flow-f-client" onchange="renderFlows()"><option value="">Todos os clientes</option></select>
+            <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openFlowModal()"><i data-lucide="plus" class="ic-sm"></i> Novo Fluxo</button>
+          </div>
+          <div class="section-title" style="margin-bottom:16px">Fluxos de Demanda</div>
+          <div class="flow-grid" id="flow-clients-grid"></div>
         </div>
-        <div class="filters-bar" style="margin-bottom:12px">
-          <input class="filter-input" id="flow-search" placeholder="Buscar fluxo…" oninput="renderFlows()">
-          <select class="filter-select" id="flow-f-project" onchange="renderFlows()"><option value="">Todos os projetos</option></select>
-          <select class="filter-select" id="flow-f-type" onchange="renderFlows()"><option value="">Todos os tipos</option></select>
+
+        <!-- VIEW B: fluxos de um cliente específico -->
+        <div id="flows-view-detail" style="display:none">
+          <div class="filters-bar" style="margin-bottom:18px;gap:10px">
+            <button class="btn btn-ghost btn-sm" onclick="closeClientFlows()"><i data-lucide="chevron-left" class="ic-sm"></i> Voltar</button>
+            <div class="filter-input-wrap">
+              <i data-lucide="search" class="filter-input-icon ic-sm"></i>
+              <input class="filter-input filter-input--with-icon" id="flow-detail-search" placeholder="Buscar fluxo…" oninput="renderClientFlows(currentClientView)">
+            </div>
+            <select class="filter-select" id="flow-detail-type" onchange="renderClientFlows(currentClientView)"><option value="">Todos os tipos</option></select>
+            <span style="font-size:12px;color:var(--text-muted);margin-left:6px">Ordenar</span>
+            <button class="btn btn-ghost btn-sm flow-sort-btn" data-sort="name" onclick="setClientFlowSort('name')">Nome</button>
+            <button class="btn btn-ghost btn-sm flow-sort-btn" data-sort="type" onclick="setClientFlowSort('type')">Tipo</button>
+            <button class="btn btn-ghost btn-sm flow-sort-btn" data-sort="modified" onclick="setClientFlowSort('modified')">Modificação</button>
+            <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openFlowModalForClient(currentClientView)"><i data-lucide="plus" class="ic-sm"></i> Novo Fluxo</button>
+          </div>
+          <div class="section-title" id="flow-detail-breadcrumb" style="margin-bottom:16px"></div>
+          <div class="flow-grid" id="flow-detail-grid"></div>
         </div>
-        <div class="table-wrap table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th style="cursor:pointer" onclick="sortFlowsBy('name')">Fluxo <i data-lucide="chevrons-up-down" class="ic-xs"></i></th>
-                <th style="cursor:pointer" onclick="sortFlowsBy('project')">Projeto <i data-lucide="chevrons-up-down" class="ic-xs"></i></th>
-                <th style="cursor:pointer" onclick="sortFlowsBy('type')">Tipo <i data-lucide="chevrons-up-down" class="ic-xs"></i></th>
-                <th style="cursor:pointer" onclick="sortFlowsBy('demands')">Demandas <i data-lucide="chevrons-up-down" class="ic-xs"></i></th>
-                <th style="width:140px"></th>
-              </tr>
-            </thead>
-            <tbody id="flows-table-body"></tbody>
-          </table>
-        </div>
+
       </div>
     </div>
 
@@ -757,6 +835,96 @@
 </div>
 
 <!-- MODAL: PROJETO -->
+<!-- ── MODAL: NOVO / EDITAR CLIENTE ── -->
+<div class="modal-overlay" id="client-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title" id="client-modal-title">Novo Cliente</div>
+      <button class="modal-close" onclick="closeModal('client-modal')"><i data-lucide="x" class="ic-sm"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="client-modal-grid">
+        <!-- Coluna esquerda: avatar grande -->
+        <div class="client-avatar-col">
+          <div class="client-avatar-big" id="c-avatar-preview"></div>
+          <input type="file" id="c-avatar-input" accept="image/*" style="display:none" onchange="handleClientAvatarUpload(event)">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="$('c-avatar-input').click()" style="margin-top:10px;width:100%">Trocar foto</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="c-avatar-remove" onclick="removeClientAvatar()" style="display:none;margin-top:6px;width:100%">Remover foto</button>
+        </div>
+        <!-- Coluna direita: campos principais -->
+        <div class="client-fields-col">
+          <div class="form-group">
+            <label class="form-label">Nome do cliente</label>
+            <input class="form-control" id="c-name" placeholder="Ex: BRZ Empreendimentos" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Workspace</label>
+            <select class="form-control" id="c-workspace"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cor de identificação</label>
+            <input class="form-control" id="c-color" type="color" value="#7A00FF" style="height:40px;padding:4px">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-grid" style="margin-top:18px">
+        <div class="form-group full">
+          <label class="form-label">Segmento</label>
+          <input class="form-control" id="c-segment" placeholder="Ex: Imobiliário, Saúde, Educação..." list="client-segments-datalist">
+          <datalist id="client-segments-datalist"></datalist>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Arquivos do projeto</label>
+          <input class="form-control" id="c-drive-files" type="url" placeholder="Link do Drive / Notion / etc">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Ativos da marca</label>
+          <input class="form-control" id="c-brand-assets" type="url" placeholder="Link do Drive / Figma / etc">
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Diretrizes e restrições</label>
+          <textarea class="form-control" id="c-guidelines" rows="4" placeholder="Anote tudo o que o time precisa saber sobre o cliente: tom de voz, restrições legais, marcas que não podem aparecer, etc."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer client-modal-foot">
+      <div class="client-modal-foot-left" id="c-foot-left">
+        <button class="btn btn-ghost btn-sm client-modal-delete" id="c-delete-btn" onclick="openClientDeleteConfirm()" style="display:none">Excluir Cliente</button>
+        <div class="client-status-group" id="c-status-group" style="display:none">
+          <span style="font-size:12px;color:var(--text-muted)">Estado</span>
+          <button class="btn btn-ghost btn-sm client-status-pick" data-val="active" onclick="setClientModalStatus(true)">Ativo</button>
+          <button class="btn btn-ghost btn-sm client-status-pick" data-val="archived" onclick="setClientModalStatus(false)">Desativado</button>
+        </div>
+      </div>
+      <div class="client-modal-foot-right">
+        <button class="btn btn-ghost" onclick="closeModal('client-modal')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveClient()">Salvar Cliente</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: CONFIRMAR EXCLUSÃO DE CLIENTE (digite o nome) ── -->
+<div class="modal-overlay" id="client-delete-modal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <div class="modal-title" id="client-delete-title">Excluir cliente?</div>
+      <button class="modal-close" onclick="closeModal('client-delete-modal')"><i data-lucide="x" class="ic-sm"></i></button>
+    </div>
+    <div class="modal-body">
+      <p style="margin:0 0 8px;font-size:13px;color:var(--text-dim);line-height:1.55">Essa ação não pode ser desfeita. Todos os dados do cliente serão removidos do sistema.</p>
+      <p style="margin:0 0 12px;font-size:13px;color:var(--text)" id="client-delete-confirm-text">Para confirmar, digite <strong></strong> abaixo:</p>
+      <input class="form-control" id="client-delete-input" placeholder="Digite o nome exato do cliente" autocomplete="off" oninput="updateClientDeleteBtnState()">
+      <div id="client-delete-warning" style="margin-top:10px;font-size:12px;color:var(--warn);line-height:1.5"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('client-delete-modal')">Cancelar</button>
+      <button class="btn btn-danger" id="client-delete-confirm-btn" onclick="confirmDeleteClient()" disabled>Excluir</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="project-modal">
   <div class="modal modal-md">
     <div class="modal-header">
@@ -775,14 +943,9 @@
           <input class="form-control" id="p-name" placeholder="Ex: Campanha Verão 2026">
         </div>
         <div class="form-group">
-          <label class="form-label">Cliente</label>
-          <div class="combobox" id="p-client-combo">
-            <input class="form-control combobox-input" id="p-client" placeholder="Digite ou escolha um cliente existente" autocomplete="off" oninput="onClientInput()" onfocus="openClientDropdown()" onkeydown="onClientKey(event)">
-            <button type="button" class="combobox-toggle" onclick="toggleClientDropdown()" tabindex="-1" aria-label="Ver clientes existentes">
-              <i data-lucide="chevron-down" class="ic-xs"></i>
-            </button>
-            <div class="combobox-menu" id="p-client-menu"></div>
-          </div>
+          <label class="form-label">Cliente *</label>
+          <select class="form-control" id="p-client-select"></select>
+          <div class="form-hint" id="p-client-hint" style="display:none;font-size:12px;color:var(--c-text-2);margin-top:6px"></div>
         </div>
         <div class="form-group">
           <label class="form-label">Workspace</label>
@@ -807,37 +970,56 @@
 <!-- MODAL: FLUXO -->
 <div class="modal-overlay" id="flow-modal">
   <div class="modal modal-lg">
-    <div class="modal-header">
-      <div class="modal-title" id="flow-modal-title">Novo Fluxo</div>
-      <button class="modal-close" onclick="attemptCloseModal('flow-modal')"><i data-lucide="x" class="ic-sm"></i></button>
+    <div class="modal-header flow-modal-head">
+      <div>
+        <div class="modal-title" id="flow-modal-title">Novo fluxo</div>
+        <div class="flow-modal-subtitle" id="flow-modal-subtitle">Cliente</div>
+      </div>
+      <div class="flow-modal-head-right">
+        <button type="button" class="flow-icon-picker" id="fl-icon-picker" onclick="$('fl-icon-input').click()" title="Adicionar ícone personalizado">
+          <input type="file" id="fl-icon-input" accept="image/*" style="display:none" onchange="handleFlowIconUpload(event)">
+          <div id="fl-icon-preview" class="flow-icon-preview">
+            <span class="flow-icon-label">ícone</span>
+          </div>
+        </button>
+        <button class="modal-close" onclick="attemptCloseModal('flow-modal')"><i data-lucide="x" class="ic-sm"></i></button>
+      </div>
     </div>
     <div class="modal-body">
       <div class="form-grid" style="margin-bottom:16px">
         <div class="form-group">
-          <label class="form-label">Nome do Fluxo *</label>
-          <input class="form-control" id="fl-name" placeholder="Ex: Fluxo de Social Media" oninput="flowModalDirty=true">
+          <label class="form-label">Fluxo</label>
+          <input class="form-control" id="fl-name" placeholder="Ex: Fluxo de mídias sociais" oninput="flowModalDirty=true">
         </div>
         <div class="form-group">
           <label class="form-label">Tipo de Demanda</label>
           <input class="form-control" id="fl-type" placeholder="Ex: Social Media" list="flowtypes-datalist" oninput="flowModalDirty=true">
           <datalist id="flowtypes-datalist"></datalist>
         </div>
-        <div class="form-group full">
-          <label class="form-label">Projeto (fluxo exclusivo)</label>
+        <!-- Projeto vinculado fica como campo opcional avançado, escondido por padrão -->
+        <div class="form-group full" id="fl-project-group" style="display:none">
+          <label class="form-label">Projeto (deixar vazio para todos os projetos do cliente)</label>
           <select class="form-control" id="fl-project" onchange="flowModalDirty=true"></select>
         </div>
       </div>
-      <label class="form-label" style="display:block;margin-bottom:8px">Etapas (arraste para reordenar)</label>
+      <label class="form-label" style="display:block;margin-bottom:8px">Etapas</label>
       <div class="stage-list" id="stage-list" oninput="flowModalDirty=true"></div>
-      <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="addStageRow();flowModalDirty=true">+ Adicionar etapa</button>
+      <button class="btn btn-ghost btn-sm flow-add-stage-btn" onclick="addStageRow();flowModalDirty=true"><i data-lucide="plus" class="ic-sm"></i> Adicionar nova etapa</button>
       <div style="font-size:11px;color:var(--text-muted);margin-top:12px;line-height:1.6">
         <strong>Prazo (dias)</strong> começa a contar quando a demanda entra na etapa. <strong>Responsável</strong> assume a demanda ao chegar nela.
-        Marque <strong>“Conclui”</strong> nas etapas que encerram a demanda. Se uma etapa em uso for removida, as demandas dela voltam à primeira etapa.
+        Marque <strong>"Conclui"</strong> nas etapas que encerram a demanda. Se uma etapa em uso for removida, as demandas dela voltam à primeira etapa.
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="attemptCloseModal('flow-modal')">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveFlow()">Salvar Fluxo</button>
+    <div class="modal-footer flow-modal-foot">
+      <label class="flow-apply-toggle" id="fl-apply-toggle-wrap">
+        <input type="checkbox" id="fl-apply-all">
+        <span class="flow-toggle-track"><span class="flow-toggle-thumb"></span></span>
+        <span class="flow-toggle-label">Aplicar a todos os projetos</span>
+      </label>
+      <div class="flow-modal-foot-right">
+        <button class="btn btn-ghost" onclick="attemptCloseModal('flow-modal')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveFlow()">Salvar Fluxo</button>
+      </div>
     </div>
   </div>
 </div>

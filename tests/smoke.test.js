@@ -129,8 +129,11 @@ test('Persistência SQLite: criar projeto e ler de volta', async () => {
   const ws = await postJson('/api/workspaces', { name: 'Test WS', color: '#7A00FF' }, { headers: { Cookie: cookie } });
   assert.equal(ws.status, 201);
   const wsId = ws.body.id;
-  // Cria projeto
-  const p = await postJson('/api/projects', { name: 'Projeto Teste', client: 'ACME', workspaceId: wsId }, { headers: { Cookie: cookie } });
+  // Cria cliente (projetos agora exigem clientId existente)
+  const cli = await postJson('/api/clients', { name: 'ACME', workspaceId: wsId }, { headers: { Cookie: cookie } });
+  assert.equal(cli.status, 201);
+  // Cria projeto vinculado ao cliente
+  const p = await postJson('/api/projects', { name: 'Projeto Teste', clientId: cli.body.id, workspaceId: wsId }, { headers: { Cookie: cookie } });
   assert.equal(p.status, 201);
   assert.equal(p.body.name, 'Projeto Teste');
   // Lê e verifica

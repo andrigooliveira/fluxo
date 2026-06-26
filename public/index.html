@@ -62,7 +62,6 @@
       </div>
     </div>
     <nav class="sidebar-nav">
-      <div class="nav-section">Navegação</div>
       <div class="nav-item active" data-page="dashboard" onclick="goPage('dashboard')">
         <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".5"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".5"/></svg>
         Dashboard
@@ -75,16 +74,19 @@
         <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="5" r="3" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 14c.8-2.6 3-4 5.5-4s4.7 1.4 5.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         Minhas Demandas
       </div>
+      <div class="nav-item" data-page="agenda" onclick="goPage('agenda')">
+        <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="3.5" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M5 1.5v3M11 1.5v3M2 6.5h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Agenda
+      </div>
       <div class="nav-item" data-page="capacity" onclick="goPage('capacity')">
         <svg viewBox="0 0 16 16" fill="none"><path d="M2 13V8m4 5V5m4 8V3m4 10v-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         Capacidade
       </div>
-      <div class="nav-section">Configuração</div>
       <div class="nav-item" data-page="clients" onclick="goPage('clients')">
         <svg viewBox="0 0 16 16" fill="none"><path d="M8 8a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 14c.8-2.6 3-4 5.5-4s4.7 1.4 5.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         Clientes
       </div>
-      <div class="nav-item" data-page="flows" id="nav-flows" onclick="goPage('flows')" style="display:none">
+      <div class="nav-item" data-page="flows" id="nav-flows" onclick="goPage('flows')">
         <svg viewBox="0 0 16 16" fill="none"><circle cx="3" cy="8" r="1.8" stroke="currentColor" stroke-width="1.5"/><circle cx="13" cy="3.5" r="1.8" stroke="currentColor" stroke-width="1.5"/><circle cx="13" cy="12.5" r="1.8" stroke="currentColor" stroke-width="1.5"/><path d="M4.7 7.2l6.5-3M4.7 8.8l6.5 3" stroke="currentColor" stroke-width="1.5"/></svg>
         Fluxos de Demanda
       </div>
@@ -92,15 +94,15 @@
         <svg viewBox="0 0 16 16" fill="none"><rect x="2.5" y="1.5" width="9" height="13" rx="1" stroke="currentColor" stroke-width="1.5"/><path d="M5 5h4M5 8h4M5 11h2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M13.5 3.5v10a1 1 0 01-1 1H11" stroke="currentColor" stroke-width="1.5"/></svg>
         Templates
       </div>
-      <div class="nav-item" data-page="integrations" id="nav-integrations" onclick="goPage('integrations')" style="display:none">
+      <div class="nav-item" data-page="integrations" id="nav-integrations" onclick="goPage('integrations')">
         <svg viewBox="0 0 16 16" fill="none"><path d="M4 8h2.5a2 2 0 002-2V3.5M12 8H9.5a2 2 0 00-2 2v2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="3" cy="8" r="1.5" stroke="currentColor" stroke-width="1.5"/><circle cx="13" cy="8" r="1.5" stroke="currentColor" stroke-width="1.5"/><circle cx="7.5" cy="3.5" r="1.5" stroke="currentColor" stroke-width="1.5"/><circle cx="7.5" cy="12.5" r="1.5" stroke="currentColor" stroke-width="1.5"/></svg>
         Integrações
       </div>
-      <div class="nav-item" data-page="workspaces" id="nav-workspaces" onclick="goPage('workspaces')" style="display:none">
+      <div class="nav-item" data-page="workspaces" id="nav-workspaces" onclick="goPage('workspaces')">
         <svg viewBox="0 0 16 16" fill="none"><rect x="1.5" y="2.5" width="13" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M1.5 6h13" stroke="currentColor" stroke-width="1.5"/></svg>
         Workspaces
       </div>
-      <div class="nav-item" data-page="users" id="nav-users" onclick="goPage('users')" style="display:none">
+      <div class="nav-item" data-page="users" id="nav-users" onclick="goPage('users')">
         <svg viewBox="0 0 16 16" fill="none"><circle cx="5.5" cy="5" r="2.5" stroke="currentColor" stroke-width="1.5"/><path d="M1.5 13c.6-2.2 2.2-3.3 4-3.3s3.4 1.1 4 3.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="11.5" cy="5.5" r="2" stroke="currentColor" stroke-width="1.5"/><path d="M11 9.8c1.8.1 3 1.1 3.5 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         Usuários
       </div>
@@ -319,6 +321,22 @@
         </div>
 
         <div class="section-head" style="margin-top:28px">
+          <div class="section-title">Minha Agenda</div>
+          <div class="agenda-week-nav">
+            <button class="btn btn-ghost btn-sm" onclick="agendaPrevWeek()" title="Semana anterior"><i data-lucide="chevron-left" class="ic-sm"></i></button>
+            <span class="agenda-week-label" id="mine-agenda-week-label">—</span>
+            <button class="btn btn-ghost btn-sm" onclick="agendaNextWeek()" title="Próxima semana"><i data-lucide="chevron-right" class="ic-sm"></i></button>
+            <button class="btn btn-ghost btn-sm" onclick="agendaThisWeek()">Hoje</button>
+            <div class="agenda-view-toggle" style="margin-left:8px">
+              <button class="btn btn-ghost btn-sm agenda-view-btn active" data-view="2" onclick="setAgendaView(2)">2 semanas</button>
+              <button class="btn btn-ghost btn-sm agenda-view-btn" data-view="1" onclick="setAgendaView(1)">1 semana</button>
+            </div>
+          </div>
+        </div>
+        <div class="agenda-hint">Arraste em um horário vazio pra criar um bloco. Arraste um bloco existente pra mover. Arraste a borda inferior pra redimensionar.</div>
+        <div class="agenda-grid-wrap" id="mine-agenda-grid-wrap"></div>
+
+        <div class="section-head" style="margin-top:28px">
           <div class="section-title">Meu Calendário</div>
         </div>
         <div class="calendar-nav">
@@ -356,6 +374,31 @@
       </div>
     </div>
 
+    <!-- ── AGENDA ── -->
+    <div class="page" id="page-agenda">
+      <div class="page-body">
+        <div class="agenda-toolbar">
+          <div class="agenda-user-pick">
+            <label class="form-label" style="margin-right:8px">Usuário</label>
+            <select class="form-control" id="agenda-user" onchange="onAgendaUserChange()"></select>
+          </div>
+          <div class="agenda-week-nav">
+            <button class="btn btn-ghost btn-sm" onclick="agendaPrevWeek()" title="Semana anterior"><i data-lucide="chevron-left" class="ic-sm"></i></button>
+            <span class="agenda-week-label" id="agenda-week-label">—</span>
+            <button class="btn btn-ghost btn-sm" onclick="agendaNextWeek()" title="Próxima semana"><i data-lucide="chevron-right" class="ic-sm"></i></button>
+            <button class="btn btn-ghost btn-sm" onclick="agendaThisWeek()">Hoje</button>
+          </div>
+          <div class="agenda-spacer"></div>
+          <div class="agenda-view-toggle">
+            <button class="btn btn-ghost btn-sm agenda-view-btn active" data-view="2" onclick="setAgendaView(2)">2 semanas</button>
+            <button class="btn btn-ghost btn-sm agenda-view-btn" data-view="1" onclick="setAgendaView(1)">1 semana</button>
+          </div>
+        </div>
+        <div class="agenda-hint">Arraste em um horário vazio pra criar um bloco. Arraste um bloco existente pra mover. Arraste a borda inferior pra redimensionar. Clique pra abrir a demanda.</div>
+        <div class="agenda-grid-wrap" id="agenda-grid-wrap"></div>
+      </div>
+    </div>
+
     <!-- ── TEMPLATES ── -->
     <div class="page" id="page-templates">
       <div class="page-body">
@@ -385,7 +428,7 @@
       <div class="page-body">
         <div class="section-head">
           <div class="section-title">Integrações · Webhooks</div>
-          <button class="btn btn-primary" onclick="openWebhookModal()">+ Nova Integração</button>
+          <button class="btn btn-primary admin-only" onclick="openWebhookModal()">+ Nova Integração</button>
         </div>
         <div class="capacity-hint">Webhooks notificam serviços externos (como Discord, Slack, Make, n8n) quando eventos acontecem nas demandas. Use o formato Discord para postar embeds formatados direto em um canal.</div>
         <div class="table-wrap table-scroll">
@@ -473,7 +516,7 @@
           <div class="section-title">Projetos Cadastrados</div>
           <div style="display:flex;gap:6px;align-items:center">
             <button class="btn btn-ghost btn-sm" id="proj-archive-toggle" onclick="toggleArchivedProjects()">Ver arquivados</button>
-            <button class="btn btn-primary btn-sm" onclick="openProjectModal()">+ Novo Projeto</button>
+            <button class="btn btn-primary btn-sm" onclick="goPage('clients')" title="Projetos são criados dentro do cliente">+ Novo Projeto</button>
           </div>
         </div>
         <div class="filters-bar" style="margin-bottom:12px">
@@ -515,7 +558,7 @@
               <input class="filter-input filter-input--with-icon" id="flow-search" placeholder="Buscar cliente…" oninput="renderFlows()">
             </div>
             <select class="filter-select" id="flow-f-client" onchange="renderFlows()"><option value="">Todos os clientes</option></select>
-            <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openFlowModal()"><i data-lucide="plus" class="ic-sm"></i> Novo Fluxo</button>
+            <button class="btn btn-primary btn-sm admin-only" style="margin-left:auto" onclick="openFlowModal()"><i data-lucide="plus" class="ic-sm"></i> Novo Fluxo</button>
           </div>
           <div class="section-title" style="margin-bottom:16px">Fluxos de Demanda</div>
           <div class="flow-grid" id="flow-clients-grid"></div>
@@ -534,7 +577,7 @@
             <button class="btn btn-ghost btn-sm flow-sort-btn" data-sort="name" onclick="setClientFlowSort('name')">Nome</button>
             <button class="btn btn-ghost btn-sm flow-sort-btn" data-sort="type" onclick="setClientFlowSort('type')">Tipo</button>
             <button class="btn btn-ghost btn-sm flow-sort-btn" data-sort="modified" onclick="setClientFlowSort('modified')">Modificação</button>
-            <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openFlowModalForClient(currentClientView)"><i data-lucide="plus" class="ic-sm"></i> Novo Fluxo</button>
+            <button class="btn btn-primary btn-sm admin-only" style="margin-left:auto" onclick="openFlowModalForClient(currentClientView)"><i data-lucide="plus" class="ic-sm"></i> Novo Fluxo</button>
           </div>
           <div class="section-title" id="flow-detail-breadcrumb" style="margin-bottom:16px"></div>
           <div class="flow-grid" id="flow-detail-grid"></div>
@@ -548,7 +591,7 @@
       <div class="page-body">
         <div class="section-head">
           <div class="section-title">Workspaces (Squads)</div>
-          <button class="btn btn-primary btn-sm" onclick="openWsModal()">+ Novo Workspace</button>
+          <button class="btn btn-primary btn-sm admin-only" onclick="openWsModal()">+ Novo Workspace</button>
         </div>
         <div class="table-wrap table-scroll">
           <table>
@@ -576,7 +619,7 @@
           <div class="section-title">Usuários da Equipe</div>
           <div style="display:flex;gap:6px;align-items:center">
             <button class="btn btn-ghost btn-sm" id="user-archive-toggle" onclick="toggleArchivedUsers()">Ver desativados</button>
-            <button class="btn btn-primary btn-sm" onclick="openUserModal()">+ Cadastrar Usuário</button>
+            <button class="btn btn-primary btn-sm admin-only" onclick="openUserModal()">+ Cadastrar Usuário</button>
           </div>
         </div>
         <div class="table-wrap table-scroll">
@@ -598,7 +641,7 @@
 
         <div class="section-head" style="margin-top:36px">
           <div class="section-title">Funções da Equipe</div>
-          <button class="btn btn-primary btn-sm" onclick="openRoleModal()">+ Nova Função</button>
+          <button class="btn btn-primary btn-sm admin-only" onclick="openRoleModal()">+ Nova Função</button>
         </div>
         <div class="table-wrap table-scroll">
           <table>
@@ -723,57 +766,43 @@
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-group full" id="f-template-group">
-          <label class="form-label">Usar um template (opcional)</label>
-          <select class="form-control" id="f-template" onchange="applyDemandTemplate()">
-            <option value="">— Em branco —</option>
-          </select>
-        </div>
+        <!-- 1. NOME DA DEMANDA -->
         <div class="form-group full">
-          <label class="form-label">Nome da Demanda *</label>
+          <label class="form-label">Nome da Demanda</label>
           <input class="form-control" id="f-name" placeholder="Ex: Carrossel Instagram – Lançamento">
         </div>
-        <div class="form-group full">
-          <label class="form-label">Descrição da Demanda</label>
-          <textarea class="form-control" id="f-description" rows="3" placeholder="Detalhe o que precisa ser feito, referências, contexto…"></textarea>
-        </div>
-        <div class="form-group full">
-          <label class="form-label">Arquivos da Demanda</label>
-          <div class="demand-att-wrap">
-            <div class="demand-att-list" id="f-attachments-list"></div>
-            <div class="demand-att-actions">
-              <input type="file" id="f-att-file-input" multiple style="display:none" onchange="handleDemandAttachmentFiles(event, 'f-attachments-list')">
-              <button type="button" class="btn btn-ghost btn-sm" onclick="$('f-att-file-input').click()"><i data-lucide="paperclip" class="ic-sm"></i> Anexar arquivo</button>
-              <input type="file" id="f-att-img-input" accept="image/*" multiple style="display:none" onchange="handleDemandAttachmentImages(event, 'f-attachments-list')">
-              <button type="button" class="btn btn-ghost btn-sm" onclick="$('f-att-img-input').click()"><i data-lucide="image" class="ic-sm"></i> Anexar imagem</button>
-              <button type="button" class="btn btn-ghost btn-sm" onclick="addDemandAttachmentLink('f-attachments-list')"><i data-lucide="link" class="ic-sm"></i> Adicionar link</button>
-            </div>
-          </div>
-        </div>
+        <!-- 2. PROJETO | FLUXO -->
         <div class="form-group">
-          <label class="form-label">Projeto *</label>
+          <label class="form-label">Projeto</label>
           <select class="form-control" id="f-project" onchange="onDemandProjectChange()"></select>
         </div>
         <div class="form-group">
-          <label class="form-label">Fluxo de Demanda</label>
+          <label class="form-label">Fluxo</label>
           <select class="form-control" id="f-flow" onchange="syncStatusOptions()"></select>
         </div>
-        <div class="form-group">
+        <!-- 3. DESCRIÇÃO -->
+        <div class="form-group full">
+          <label class="form-label">Descrição</label>
+          <textarea class="form-control" id="f-description" rows="5" placeholder="Detalhe o que precisa ser feito, referências, contexto…"></textarea>
+        </div>
+        <!-- 4. LINK DO BRIEFING -->
+        <div class="form-group full">
           <label class="form-label">Link do Briefing</label>
           <input class="form-control" id="f-briefing" type="url" placeholder="https://drive.google.com/…">
         </div>
-        <div class="form-group">
-          <label class="form-label">Prazo Final (opcional)</label>
-          <input class="form-control" id="f-deadline" type="date">
+        <!-- 5. ANEXOS -->
+        <div class="form-group full">
+          <label class="form-label">Anexos</label>
+          <div class="demand-att-buttons">
+            <input type="file" id="f-att-file-input" multiple style="display:none" onchange="handleDemandAttachmentFiles(event, 'f-attachments-list')">
+            <button type="button" class="demand-att-btn" onclick="$('f-att-file-input').click()"><i data-lucide="paperclip" class="ic-sm"></i><span>Arquivo</span></button>
+            <input type="file" id="f-att-img-input" accept="image/*" multiple style="display:none" onchange="handleDemandAttachmentImages(event, 'f-attachments-list')">
+            <button type="button" class="demand-att-btn" onclick="$('f-att-img-input').click()"><i data-lucide="image" class="ic-sm"></i><span>Imagem</span></button>
+            <button type="button" class="demand-att-btn" onclick="addDemandAttachmentLink('f-attachments-list')"><i data-lucide="link" class="ic-sm"></i><span>Link</span></button>
+          </div>
+          <div class="demand-att-list" id="f-attachments-list" style="margin-top:10px"></div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Status (etapa)</label>
-          <select class="form-control" id="f-status" onchange="onDemandStatusChange()"></select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Horas estimadas (opcional)</label>
-          <input class="form-control" id="f-estimated" type="number" min="0" step="0.5" placeholder="Ex: 4">
-        </div>
+        <!-- 6. PRIORIDADE | RESPONSÁVEL ATUAL -->
         <div class="form-group">
           <label class="form-label">Prioridade</label>
           <select class="form-control" id="f-priority">
@@ -783,45 +812,38 @@
             <option value="4">Baixa</option>
           </select>
         </div>
-        <div class="form-group full">
+        <div class="form-group">
           <label class="form-label">Responsável Atual</label>
           <div id="f-owner-select"></div>
         </div>
-        <div class="form-group full">
-          <label class="form-check"><input type="checkbox" id="f-rec-enabled" onchange="$('f-rec-config').style.display = this.checked ? '' : 'none'"> Demanda recorrente — gerar automaticamente</label>
-          <div class="rec-grid" id="f-rec-config" style="display:none;margin-top:12px">
-            <div class="form-group" style="margin:0">
-              <label class="form-label">Frequência</label>
-              <select class="form-control" id="f-rec-pattern" onchange="$('f-rec-weekday-g').style.display=this.value==='weekly'?'':'none';$('f-rec-monthday-g').style.display=this.value==='monthly'?'':'none'">
-                <option value="daily">Diariamente (dias úteis)</option>
-                <option value="weekly" selected>Semanalmente</option>
-                <option value="monthly">Mensalmente</option>
-              </select>
-            </div>
-            <div class="form-group" style="margin:0" id="f-rec-weekday-g">
-              <label class="form-label">Dia da semana</label>
-              <select class="form-control" id="f-rec-weekday">
-                <option value="1" selected>Segunda</option><option value="2">Terça</option><option value="3">Quarta</option>
-                <option value="4">Quinta</option><option value="5">Sexta</option>
-              </select>
-            </div>
-            <div class="form-group" style="margin:0;display:none" id="f-rec-monthday-g">
-              <label class="form-label">Dia do mês</label>
-              <input class="form-control" id="f-rec-monthday" type="number" min="1" max="28" value="1">
-            </div>
-            <div class="form-group" style="margin:0">
-              <label class="form-label">Encerrar em (opcional)</label>
-              <input class="form-control" id="f-rec-end" type="date">
-            </div>
-          </div>
+      </div>
+
+      <!-- Campos ocultos do form (mantidos pra compat de JS / dados padrão).
+           Template, prazo, status, horas estimadas e recorrência seguem editáveis
+           depois pela tela de detalhe da demanda. -->
+      <div style="display:none" aria-hidden="true">
+        <div id="f-template-group"><select id="f-template"><option value="">— Em branco —</option></select></div>
+        <input id="f-deadline" type="date">
+        <select id="f-status"></select>
+        <input id="f-estimated" type="number" value="">
+        <input type="checkbox" id="f-rec-enabled">
+        <div id="f-rec-config">
+          <select id="f-rec-pattern"><option value="weekly" selected>Semanalmente</option></select>
+          <div id="f-rec-weekday-g"><select id="f-rec-weekday"><option value="1" selected>Segunda</option></select></div>
+          <div id="f-rec-monthday-g" style="display:none"><input id="f-rec-monthday" type="number" value="1"></div>
+          <input id="f-rec-end" type="date">
         </div>
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-danger" id="demand-delete-btn" style="margin-right:auto;display:none" onclick="deleteDemand()">Excluir</button>
-      <button class="btn btn-ghost" onclick="openSaveAsTemplate()" id="save-as-template-btn">Salvar como template</button>
-      <button class="btn btn-ghost" onclick="closeModal('demand-modal')">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveDemand()">Salvar Demanda</button>
+    <div class="modal-footer client-modal-foot">
+      <div class="client-modal-foot-left">
+        <button class="btn btn-danger btn-sm" id="demand-delete-btn" style="display:none" onclick="deleteDemand()">Excluir</button>
+        <button class="btn btn-ghost" onclick="openSaveAsTemplate()" id="save-as-template-btn">Salvar como template</button>
+      </div>
+      <div class="client-modal-foot-right">
+        <button class="btn btn-ghost" onclick="closeModal('demand-modal')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveDemand()">Salvar Demanda</button>
+      </div>
     </div>
   </div>
 </div>
@@ -925,51 +947,132 @@
   </div>
 </div>
 
+<!-- ── MODAL: AGENDAR DEMANDA (bloco da agenda) ── -->
+<div class="modal-overlay" id="schedule-modal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <div class="modal-title" id="schedule-modal-title">Agendar bloco</div>
+      <button class="modal-close" onclick="closeModal('schedule-modal')"><i data-lucide="x" class="ic-sm"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label class="form-label">Demanda</label>
+          <select class="form-control" id="sch-demand"></select>
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Quando</label>
+          <div id="sch-when" style="font-size:13px;color:var(--text-dim)"></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Início</label>
+          <input class="form-control" id="sch-start" type="time" step="900">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fim</label>
+          <input class="form-control" id="sch-end" type="time" step="900">
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Data</label>
+          <input class="form-control" id="sch-date" type="date">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer client-modal-foot">
+      <div class="client-modal-foot-left">
+        <button class="btn btn-danger btn-sm" id="sch-delete-btn" style="display:none" onclick="deleteScheduleFromModal()">Excluir</button>
+      </div>
+      <div class="client-modal-foot-right">
+        <button class="btn btn-ghost" onclick="closeModal('schedule-modal')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveSchedule()">Salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="project-modal">
-  <div class="modal modal-md">
+  <div class="modal modal-lg">
     <div class="modal-header">
       <div class="modal-title" id="project-modal-title">Novo Projeto</div>
       <button class="modal-close" onclick="closeModal('project-modal')"><i data-lucide="x" class="ic-sm"></i></button>
     </div>
     <div class="modal-body">
-      <div class="project-avatar-wrap">
-        <div class="avatar avatar-lg" id="p-avatar-preview" style="cursor:pointer" onclick="$('p-avatar-input').click()" title="Clique para alterar a imagem"></div>
-        <input type="file" id="p-avatar-input" accept="image/*" style="display:none" onchange="handleProjectAvatar(event)">
-        <button type="button" class="btn btn-ghost btn-sm" id="p-avatar-remove" onclick="removeProjectAvatar()" style="display:none;margin-top:8px">Remover foto</button>
+      <div class="client-modal-grid">
+        <!-- Coluna esquerda: avatar grande -->
+        <div class="client-avatar-col">
+          <div class="client-avatar-big" id="p-avatar-preview" style="cursor:pointer" onclick="$('p-avatar-input').click()" title="Clique para alterar a imagem"></div>
+          <input type="file" id="p-avatar-input" accept="image/*" style="display:none" onchange="handleProjectAvatar(event)">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="$('p-avatar-input').click()" style="margin-top:10px;width:100%">Trocar foto</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="p-avatar-remove" onclick="removeProjectAvatar()" style="display:none;margin-top:6px;width:100%">Remover foto</button>
+        </div>
+        <!-- Coluna direita: campos principais -->
+        <div class="client-fields-col">
+          <div class="form-group">
+            <label class="form-label">Nome do projeto</label>
+            <input class="form-control" id="p-name" placeholder="Ex: Campanha Verão 2026" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cor de identificação</label>
+            <input class="form-control" id="p-color" type="color" value="#7A00FF" style="height:40px;padding:4px">
+          </div>
+        </div>
       </div>
-      <div class="form-grid">
+
+      <div class="form-grid" style="margin-top:18px">
         <div class="form-group">
-          <label class="form-label">Nome do Projeto *</label>
-          <input class="form-control" id="p-name" placeholder="Ex: Campanha Verão 2026">
+          <label class="form-label">Arquivos do projeto</label>
+          <input class="form-control" id="p-drive-files" type="url" placeholder="Link do Drive / Notion / etc">
         </div>
         <div class="form-group">
-          <label class="form-label">Cliente *</label>
-          <select class="form-control" id="p-client-select"></select>
-          <div class="form-hint" id="p-client-hint" style="display:none;font-size:12px;color:var(--c-text-2);margin-top:6px"></div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Workspace</label>
-          <select class="form-control" id="p-workspace"></select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Cor de identificação</label>
-          <input class="form-control" id="p-color" type="color" value="#7A00FF" style="height:40px;padding:4px">
+          <label class="form-label">Ativos da marca</label>
+          <input class="form-control" id="p-brand-assets" type="url" placeholder="Link do Drive / Figma / etc">
         </div>
         <div class="form-group full">
-          <label class="form-check"><input type="checkbox" id="p-active" checked> Projeto ativo</label>
+          <label class="form-label">Diretrizes e restrições</label>
+          <textarea class="form-control" id="p-guidelines" rows="4" placeholder="Anote o que o time precisa saber sobre este projeto: prazos especiais, formatos preferidos, restrições específicas, etc."></textarea>
         </div>
       </div>
     </div>
+    <div class="modal-footer client-modal-foot">
+      <div class="client-modal-foot-left" id="p-foot-left">
+        <button class="btn btn-ghost btn-sm client-modal-delete" id="p-delete-btn" onclick="openProjectDeleteConfirm()" style="display:none">Excluir Projeto</button>
+        <div class="client-status-group" id="p-status-group" style="display:none">
+          <span style="font-size:12px;color:var(--text-muted)">Estado</span>
+          <button class="btn btn-ghost btn-sm client-status-pick" data-pval="active" onclick="setProjectModalStatus(true)">Ativo</button>
+          <button class="btn btn-ghost btn-sm client-status-pick" data-pval="archived" onclick="setProjectModalStatus(false)">Desativado</button>
+        </div>
+      </div>
+      <div class="client-modal-foot-right">
+        <button class="btn btn-ghost" onclick="closeModal('project-modal')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveProject()">Salvar Projeto</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: CONFIRMAR EXCLUSÃO DE PROJETO (digite o nome) ── -->
+<div class="modal-overlay" id="project-delete-modal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <div class="modal-title" id="project-delete-title">Excluir projeto?</div>
+      <button class="modal-close" onclick="closeModal('project-delete-modal')"><i data-lucide="x" class="ic-sm"></i></button>
+    </div>
+    <div class="modal-body">
+      <p style="margin:0 0 8px;font-size:13px;color:var(--text-dim);line-height:1.55">Essa ação não pode ser desfeita. O projeto e tudo vinculado a ele será removido do sistema.</p>
+      <p style="margin:0 0 12px;font-size:13px;color:var(--text)" id="project-delete-confirm-text">Para confirmar, digite <strong></strong> abaixo:</p>
+      <input class="form-control" id="project-delete-input" placeholder="Digite o nome exato do projeto" autocomplete="off" oninput="updateProjectDeleteBtnState()">
+      <div id="project-delete-warning" style="margin-top:10px;font-size:12px;color:var(--warn);line-height:1.5"></div>
+    </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('project-modal')">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveProject()">Salvar Projeto</button>
+      <button class="btn btn-ghost" onclick="closeModal('project-delete-modal')">Cancelar</button>
+      <button class="btn btn-danger" id="project-delete-confirm-btn" onclick="confirmDeleteProjectTyped()" disabled>Excluir</button>
     </div>
   </div>
 </div>
 
 <!-- MODAL: FLUXO -->
 <div class="modal-overlay" id="flow-modal">
-  <div class="modal modal-lg">
+  <div class="modal modal-xl">
     <div class="modal-header flow-modal-head">
       <div>
         <div class="modal-title" id="flow-modal-title">Novo fluxo</div>

@@ -18,6 +18,7 @@ let notifications = [];
 let roles      = [];
 let templates  = [];
 let webhooks   = [];
+let schedules  = [];
 let notifPollTimer = null;
 
 let activeWs   = localStorage.getItem('fluxo_ws') || null;
@@ -71,6 +72,7 @@ const PAGE_TO_PATH = {
   list:         '/demands',
   mine:         '/my-demands',
   capacity:     '/capacity',
+  agenda:       '/agenda',
   templates:    '/templates',
   clients:      '/clients',
   projects:     '/projects',
@@ -117,13 +119,9 @@ function parseRoute(path) {
   return { page: 'dashboard' };
 }
 function applyRoute() {
-  let r = parseRoute(location.pathname);
-  // Bloqueia rotas admin-only para não-admins, redirecionando pro dashboard.
-  const adminOnly = ['flows', 'users', 'workspaces', 'integrations'];
-  if (adminOnly.includes(r.page) && me && !me.isAdmin) {
-    history.replaceState(null, '', '/dashboard' + location.search);
-    r = { page: 'dashboard' };
-  }
+  const r = parseRoute(location.pathname);
+  // Todas as telas são navegáveis. Telas administrativas viram readonly pra
+  // usuários comuns via .admin-only no DOM (toggle por body.user-readonly).
   _routerSilent = true;
   try {
     // 1) Página — se já estamos nela (boot inicial), força renderCurrent
@@ -155,11 +153,11 @@ function applyRoute() {
       if (typeof openClient === 'function') openClient(r.id);
     } else if (r.modal === 'project') {
       if (typeof openProjectModal === 'function') openProjectModal(r.op === 'edit' ? r.id : null);
-    } else if (r.modal === 'flow') {
+    } else if (r.modal === 'flow' && me?.isAdmin) {
       if (typeof openFlowModal === 'function') openFlowModal(r.op === 'edit' ? r.id : null);
-    } else if (r.modal === 'user') {
+    } else if (r.modal === 'user' && me?.isAdmin) {
       if (typeof openUserModal === 'function') openUserModal(r.op === 'edit' ? r.id : null);
-    } else if (r.modal === 'webhook') {
+    } else if (r.modal === 'webhook' && me?.isAdmin) {
       if (typeof openWebhookModal === 'function') openWebhookModal(r.op === 'edit' ? r.id : null);
     }
   } finally {
@@ -410,6 +408,18 @@ function projectAvatarHTML(p, cls = 'avatar') {
    - userIcon: true → adiciona avatar do usuário ao lado do nome
    - projectIcon: true → adiciona avatar do projeto ao lado do nome
 */
+// Cores oficiais das prioridades da demanda (usadas no dot do dropdown e
+// potencialmente em badges/pills no kanban).
+const PRIORITY_COLORS = {
+  '1': '#EF4444', // Imediato — vermelho
+  '2': '#FB7415', // Alta — laranja vivo (forte contraste com o amarelo do Média)
+  '3': '#FACC15', // Média — amarelo
+  '4': '#60A5FA'  // Baixa — azul claro
+};
+function applyPriorityDropdown(selId) {
+  applyFilterDropdown(selId, { dotMap: PRIORITY_COLORS });
+}
+
 function applyFilterDropdown(selId, opts = {}) {
   const sel = document.getElementById(selId);
   if (!sel) return;
@@ -429,6 +439,10 @@ function applyFilterDropdown(selId, opts = {}) {
     } else if (opts.projectIcon && o.value) {
       const p = projectById(o.value);
       if (p) opt.avatar = projectAvatarHTML(p, 'avatar filter-cdrop-avatar');
+    } else if (opts.dotMap && opts.dotMap[o.value]) {
+      // Bola colorida por valor (ex.: prioridades). Estilo inline pra evitar
+      // proliferar classes; .filter-cdrop-dot só padroniza tamanho/forma.
+      opt.avatar = `<span class="filter-cdrop-dot" style="background:${opts.dotMap[o.value]}"></span>`;
     }
     return opt;
   });
@@ -454,22 +468,63 @@ function applyFilterDropdown(selId, opts = {}) {
 function toggleFilterCdrop(wrap) {
   document.querySelectorAll('.filter-cdrop.open, .cdrop.open').forEach(el => { if (el !== wrap) el.classList.remove('open'); });
   wrap.classList.toggle('open');
+  if (wrap.classList.contains('open')) {
+    // Auto-flip pra cima quando não cabe abaixo. Mede contra o container
+    // de scroll mais próximo (modal-body / modal / viewport) — só assim
+    // dropdowns dentro de modais detectam o limite real, não o da janela.
+    const menu = wrap.querySelector('.filter-cdrop-menu');
+    if (menu) {
+      wrap.classList.remove('drop-up');
+      const rect = wrap.getBoundingClientRect();
+      const scrollHost = wrap.closest('.modal-body') || wrap.closest('.modal') || document.documentElement;
+      const hostRect = scrollHost.getBoundingClientRect ? scrollHost.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+      const bottomLimit = Math.min(hostRect.bottom, window.innerHeight);
+      const topLimit = Math.max(hostRect.top, 0);
+      const spaceBelow = bottomLimit - rect.bottom;
+      const spaceAbove = rect.top - topLimit;
+      const menuH = menu.scrollHeight || menu.offsetHeight || 0;
+      if (spaceBelow < menuH + 12 && spaceAbove > spaceBelow) wrap.classList.add('drop-up');
+    }
+  }
   paintIcons();
 }
 function pickFilterCdrop(selId, value) {
   const sel = document.getElementById(selId);
   if (!sel) return;
-  // Fecha qualquer dropdown aberto
   document.querySelectorAll('.filter-cdrop.open').forEach(el => el.classList.remove('open'));
-  // Garante que a opção exista no select (cria se necessário, para valores dinâmicos)
   if (![...sel.options].some(o => o.value === value)) {
     const opt = document.createElement('option');
     opt.value = value;
     sel.add(opt);
   }
   sel.value = value;
-  // Dispara o handler de change de forma confiável.
-  // Tenta o onchange inline primeiro; se não houver, faz dispatch.
+  // Atualiza imediatamente o trigger visual e a marcação .active.
+  // Sem isto, o label do botão só se atualizava se algum onchange disparar
+  // um re-render externo — selects estáticos (ex.: prioridade) ficavam congelados.
+  const wrap = sel.nextElementSibling;
+  if (wrap && wrap.classList.contains('filter-cdrop')) {
+    const items = wrap.querySelectorAll('.filter-cdrop-item');
+    let chosenItem = null;
+    items.forEach(it => {
+      const isMatch = it.dataset.v === value;
+      it.classList.toggle('active', isMatch);
+      if (isMatch) chosenItem = it;
+    });
+    const label = wrap.querySelector('.filter-cdrop-label');
+    const trigger = wrap.querySelector('.filter-cdrop-trigger');
+    if (chosenItem && label && trigger) {
+      // Texto do item: o span que NÃO é o dot/avatar — usar o nome do option
+      // do select nativo como fallback confiável.
+      const opt = [...sel.options].find(o => o.value === value);
+      label.textContent = opt ? opt.label : '';
+      // Sincroniza a media (dot/avatar) do trigger com a do item escolhido
+      const itemAvatar = chosenItem.querySelector('.filter-cdrop-avatar, .filter-cdrop-dot');
+      const existingMedia = trigger.querySelector('.filter-cdrop-avatar, .filter-cdrop-dot');
+      if (existingMedia) existingMedia.remove();
+      if (itemAvatar) trigger.insertBefore(itemAvatar.cloneNode(true), trigger.firstChild);
+    }
+    wrap.classList.toggle('filtering', !!value);
+  }
   let fired = false;
   if (typeof sel.onchange === 'function') {
     try { sel.onchange.call(sel, new Event('change')); fired = true; }
@@ -753,10 +808,8 @@ function cmdkActions() {
     { icon: 'folder',       label: 'Ir para Projetos',              kind: 'Navegar',  run: () => goPage('projects') },
     { icon: 'workflow',     label: 'Ir para Fluxos',                kind: 'Navegar',  run: () => goPage('flows') },
   ];
-  if (me && me.isAdmin) {
-    acts.push({ icon: 'users',  label: 'Ir para Usuários',     kind: 'Navegar', run: () => goPage('users') });
-    acts.push({ icon: 'webhook',label: 'Ir para Integrações',  kind: 'Navegar', run: () => goPage('integrations') });
-  }
+  acts.push({ icon: 'users',  label: 'Ir para Usuários',     kind: 'Navegar', run: () => goPage('users') });
+  acts.push({ icon: 'webhook',label: 'Ir para Integrações',  kind: 'Navegar', run: () => goPage('integrations') });
   acts.push({ icon: 'sun-moon', label: 'Alternar tema (claro/escuro)', kind: 'Ação', run: () => typeof toggleTheme === 'function' && toggleTheme() });
   acts.push({ icon: 'keyboard', label: 'Mostrar atalhos de teclado',   kind: 'Ação', run: () => showShortcutsHelp() });
   return acts;
@@ -803,18 +856,16 @@ function renderCommandPalette() {
         sub: f.demandType || '',
         run: () => { if (me && me.isAdmin) openFlowModal(f.id); else goPage('flows'); }
       }));
-    if (me && me.isAdmin) {
-      usrs = (typeof wsUsers === 'function' ? wsUsers() : [])
-        .filter(u => (u.name && u.name.toLowerCase().includes(q)) || (u.username && u.username.toLowerCase().includes(q)))
-        .slice(0, 5)
-        .map(u => ({
-          icon: 'user',
-          label: u.name,
-          kind: 'Usuário',
-          sub: u.role || u.username || '',
-          run: () => openUserModal(u.id)
-        }));
-    }
+    usrs = (typeof wsUsers === 'function' ? wsUsers() : [])
+      .filter(u => (u.name && u.name.toLowerCase().includes(q)) || (u.username && u.username.toLowerCase().includes(q)))
+      .slice(0, 5)
+      .map(u => ({
+        icon: 'user',
+        label: u.name,
+        kind: 'Usuário',
+        sub: u.role || u.username || '',
+        run: () => { if (me && me.isAdmin) openUserModal(u.id); else goPage('users'); }
+      }));
   }
   cmdkResults = [...acts, ...dems, ...projs, ...flws, ...usrs];
   if (cmdkActiveIdx >= cmdkResults.length) cmdkActiveIdx = Math.max(0, cmdkResults.length - 1);
@@ -1461,6 +1512,22 @@ function buildUserSelect(container, list, selectedId, onPick, placeholder = '—
     e.stopPropagation();
     document.querySelectorAll('.user-select.open').forEach(el => { if (el !== container) el.classList.remove('open'); });
     container.classList.toggle('open');
+    if (container.classList.contains('open')) {
+      // Auto-flip pra cima quando não cabe abaixo dentro do modal/host
+      container.classList.remove('drop-up');
+      const menu = container.querySelector('.user-select-menu');
+      if (menu) {
+        const rect = container.getBoundingClientRect();
+        const scrollHost = container.closest('.modal-body') || container.closest('.modal') || document.documentElement;
+        const hostRect = scrollHost.getBoundingClientRect ? scrollHost.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+        const bottomLimit = Math.min(hostRect.bottom, window.innerHeight);
+        const topLimit = Math.max(hostRect.top, 0);
+        const spaceBelow = bottomLimit - rect.bottom;
+        const spaceAbove = rect.top - topLimit;
+        const menuH = menu.scrollHeight || menu.offsetHeight || 0;
+        if (spaceBelow < menuH + 12 && spaceAbove > spaceBelow) container.classList.add('drop-up');
+      }
+    }
   };
   container.querySelectorAll('.user-select-opt').forEach(opt => {
     opt.onclick = () => {
@@ -1620,15 +1687,13 @@ async function enterApp() {
 }
 
 async function loadAll() {
-  const promises = [
+  const results = await Promise.all([
     api('/workspaces'), api('/users'), api('/clients'), api('/projects'),
-    api('/flows'), api('/demands'), api('/roles'), api('/templates')
-  ];
-  // Webhooks só para admin
-  if (me?.isAdmin) promises.push(api('/webhooks'));
-  const results = await Promise.all(promises);
-  [workspaces, users, clients, projects, flows, demands, roles, templates] = results;
-  webhooks = me?.isAdmin ? (results[8] || []) : [];
+    api('/flows'), api('/demands'), api('/roles'), api('/templates'),
+    api('/webhooks').catch(() => []),
+    api('/schedules').catch(() => [])
+  ]);
+  [workspaces, users, clients, projects, flows, demands, roles, templates, webhooks, schedules] = results;
   const allowed = workspaces.map(w => w.id);
   if (!activeWs || !allowed.includes(activeWs)) activeWs = allowed[0] || null;
   localStorage.setItem('fluxo_ws', activeWs || '');
@@ -1693,20 +1758,18 @@ function renderSidebarUser() {
   // se avatarHTML virar a incluir mais classes (ex.: anel de presença).
   const av = $('sidebar-avatar');
   if (av) av.outerHTML = avatarHTML(me, 'avatar').replace(/class="([^"]+)"/, 'class="$1" id="sidebar-avatar"');
-  $('nav-flows').style.display = me.isAdmin ? '' : 'none';
-  $('nav-workspaces').style.display = me.isAdmin ? '' : 'none';
-  $('nav-users').style.display = me.isAdmin ? '' : 'none';
-  $('nav-integrations').style.display = me.isAdmin ? '' : 'none';
+  // Todas as abas visíveis pra todos. Mutação fica gated por .admin-only
+  // (toggle global via classe body.user-readonly).
+  document.body.classList.toggle('user-readonly', !me.isAdmin);
 }
 
 const PAGE_TITLES = {
   dashboard: 'Dashboard', list: 'Demandas', mine: 'Minhas Demandas',
   clients: 'Clientes', projects: 'Projetos', flows: 'Fluxos de Demanda',
   workspaces: 'Workspaces', users: 'Usuários', profile: 'Meu Perfil',
-  capacity: 'Capacidade', templates: 'Templates', integrations: 'Integrações'
+  capacity: 'Capacidade', templates: 'Templates', integrations: 'Integrações', agenda: 'Agenda'
 };
 function goPage(page) {
-  if ((page === 'flows' || page === 'users' || page === 'workspaces' || page === 'integrations') && !me.isAdmin) return;
   currentPage = page;
   // Cada entrada na página força um restoreFilters na próxima render.
   _markFiltersDirty(page);
@@ -1742,9 +1805,34 @@ function renderCurrent() {
     case 'list':       renderList(); renderCalendar('all'); break;
     case 'mine':       renderMine(); renderCalendar('mine'); break;
     case 'capacity':   renderCapacity(); break;
+    case 'agenda':     renderAgenda(); break;
     case 'templates':  renderTemplates(); break;
     case 'integrations': renderIntegrations(); break;
-    case 'clients':    renderClients(); break;
+    case 'clients': {
+      // Decide entre grid e detalhe sem perder estado quando refreshData() roda
+      // com um modal aberto (URL temporariamente em /projects/new etc).
+      const path = location.pathname;
+      const isOnGridUrl = path === '/clients' || path === '/clients/';
+      const detailMatch = path.match(/^\/clients\/([^/]+)$/);
+      const detailId = detailMatch ? detailMatch[1] : null;
+      if (isOnGridUrl) {
+        currentClientId = null;
+        renderClients();
+      } else if (detailId && clientById(detailId)) {
+        currentClientId = detailId;
+        $('clients-view-grid').style.display = 'none';
+        $('clients-view-detail').style.display = '';
+        renderClientDetail(detailId);
+      } else if (currentClientId && clientById(currentClientId)) {
+        // URL em outra rota (modal), preserva o detalhe que estava aberto
+        $('clients-view-grid').style.display = 'none';
+        $('clients-view-detail').style.display = '';
+        renderClientDetail(currentClientId);
+      } else {
+        renderClients();
+      }
+      break;
+    }
     case 'projects':   renderProjects(); break;
     case 'flows':      renderFlows(); break;
     case 'workspaces': renderWorkspaces(); break;
@@ -2632,9 +2720,10 @@ function renderMine() {
       <td class="${isLate(d) ? 'deadline-late' : ''}">${fmtDate(effDue(d))}</td>
     </tr>`).join('')
     : `<tr><td colspan="4">${emptyState('Nenhuma demanda encontrada', 'Você não tem demandas neste filtro.', 'inbox')}</td></tr>`;
-  // O calendário fica sempre visível abaixo da tabela em "Minhas Demandas" —
-  // re-renderiza junto pra refletir o filtro escolhido imediatamente.
+  // Calendário e Agenda embed ficam sempre visíveis abaixo da tabela em
+  // "Minhas Demandas". Re-render junto pra refletir mudanças imediato.
   if ($('cal-mine-body')) renderCalendar('mine');
+  if (typeof renderAgenda === 'function') renderAgenda();
 }
 function sortMine(key) {
   if (mineSortKey === key) mineSortAsc = !mineSortAsc; else { mineSortKey = key; mineSortAsc = true; }
@@ -3039,6 +3128,7 @@ function openNewDemand() {
   demandAttachments = [];
   refreshFormAttList('f-attachments-list');
   onDemandProjectChange();
+  applyPriorityDropdown('f-priority');
   openModal('demand-modal');
   navPush('/demands/new');
   setTimeout(() => {
@@ -3078,6 +3168,7 @@ function openEditDemand(id) {
   $('f-flow').value = d.flowId;
   syncStatusOptions(d.status);
   buildUserSelect($('f-owner-select'), wsUsers(), d.ownerId, null);
+  applyPriorityDropdown('f-priority');
   openModal('demand-modal');
   navPush('/demands/' + id + '/edit');
   setTimeout(() => setupDragDrop('#demand-modal .modal-content', 'f-attachments-list', processDroppedFiles), 60);
@@ -4959,98 +5050,146 @@ async function confirmDeleteProject(id) {
 }
 function removeProjectAvatar() {
   projAvatarData = null;
-  const preview = $('p-avatar-preview');
-  const c = $('p-color').value || '#7A00FF';
-  const letter = ($('p-name').value || 'P').charAt(0).toUpperCase();
-  preview.innerHTML = '';
-  preview.style.background = hexDim(c);
-  preview.style.color = c;
-  preview.textContent = letter;
-  $('p-avatar-remove').style.display = 'none';
+  refreshProjectAvatarPreview();
 }
 function handleProjectAvatar(ev) {
   const file = ev.target.files[0]; if (!file) return;
   const img = new Image();
   img.onload = () => {
-    const s = 160;
+    const s = 256;
     const canvas = document.createElement('canvas');
     canvas.width = s; canvas.height = s;
     const min = Math.min(img.width, img.height);
     const sx = (img.width - min) / 2, sy = (img.height - min) / 2;
     canvas.getContext('2d').drawImage(img, sx, sy, min, min, 0, 0, s, s);
     projAvatarData = canvas.toDataURL('image/jpeg', 0.85);
-    $('p-avatar-preview').innerHTML = `<img src="${projAvatarData}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
-    $('p-avatar-remove').style.display = '';
+    refreshProjectAvatarPreview();
   };
   img.src = URL.createObjectURL(file);
   ev.target.value = '';
 }
-function openProjectModal(id, presetClientId) {
+let projectModalClientId = null; // cliente associado nesta abertura do modal
+async function openProjectModal(id, presetClientId) {
   editingProjectId = id || null;
   $('project-modal-title').textContent = id ? 'Editar Projeto' : 'Novo Projeto';
   const p = id ? projectById(id) : null;
-  $('p-name').value = p?.name || '';
-  $('p-color').value = p?.color || '#7A00FF';
-  $('p-active').checked = p ? p.active !== false : true;
-  projAvatarData = p?.avatar || null;
-  const preview = $('p-avatar-preview');
-  if (projAvatarData) {
-    preview.innerHTML = `<img src="${projAvatarData}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
-  } else {
-    const c = p?.color || '#7A00FF';
-    const letter = (p?.name || 'P').charAt(0).toUpperCase();
-    preview.innerHTML = '';
-    preview.style.background = hexDim(c);
-    preview.style.color = c;
-    preview.textContent = letter;
+
+  // Cliente obrigatório: vem do projeto em edição ou do preset (tela do cliente).
+  // Sem qualquer contexto, redireciona pra Clientes em vez de abrir sem destino.
+  projectModalClientId = p?.clientId || presetClientId || null;
+  if (!projectModalClientId) {
+    toast('Selecione um cliente pra adicionar um projeto.', 'warn');
+    goPage('clients');
+    return;
   }
-  $('p-avatar-remove').style.display = projAvatarData ? '' : 'none';
-  $('p-workspace').innerHTML = workspaces.map(w =>
-    `<option value="${w.id}" ${(p ? p.workspaceId : activeWs) === w.id ? 'selected' : ''}>${esc(w.name)}</option>`
-  ).join('');
-
-  // Cliente: dropdown SÓ de clientes existentes (não cria mais auto).
-  // Edição: trava no clientId atual. Criação a partir do detalhe do cliente: trava no preset.
-  const sel = $('p-client-select');
-  const hint = $('p-client-hint');
-  const wsId = (p ? p.workspaceId : activeWs);
-  const activeClients = clients.filter(c => c.workspaceId === wsId && c.active !== false)
-                              .sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
-  const currentCid = p?.clientId || presetClientId || '';
-  const lockedToClient = !!(p?.clientId || presetClientId);
-
-  if (!activeClients.length) {
-    sel.innerHTML = `<option value="">— Nenhum cliente cadastrado —</option>`;
-    sel.disabled = true;
-    hint.style.display = '';
-    hint.innerHTML = `Crie um cliente em <a href="#" onclick="event.preventDefault(); closeModal('project-modal'); goPage('clients'); openClientModal(null);">Clientes</a> antes de adicionar projetos.`;
-  } else {
-    sel.innerHTML = (currentCid && !activeClients.find(c => c.id === currentCid) && clientById(currentCid)
-                     ? `<option value="${currentCid}">${esc(clientById(currentCid).name)} (arquivado)</option>` : '')
-      + (lockedToClient ? '' : `<option value="">— Selecione um cliente —</option>`)
-      + activeClients.map(c => `<option value="${c.id}" ${c.id === currentCid ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
-    sel.disabled = lockedToClient;
-    if (lockedToClient) {
-      hint.style.display = '';
-      hint.textContent = 'Projeto vinculado a este cliente.';
-    } else {
-      hint.style.display = 'none';
+  // Cliente do preset/projeto pode estar stale (frontend não sincronizado com backend).
+  // Faz um refresh on-demand antes de abrir pra evitar erro "Cliente inválido" no save.
+  if (!clientById(projectModalClientId)) {
+    try { clients = await api('/clients'); } catch {}
+    if (!clientById(projectModalClientId)) {
+      toast('Cliente não encontrado. Selecione um cliente da lista.', 'error');
+      projectModalClientId = null;
+      goPage('clients');
+      return;
     }
   }
+
+  $('p-name').value = p?.name || '';
+  $('p-color').value = p?.color || '#7A00FF';
+  $('p-drive-files').value = p?.driveFiles || '';
+  $('p-brand-assets').value = p?.brandAssets || '';
+  $('p-guidelines').value = p?.guidelines || '';
+
+  // Footer: edit mostra Excluir + toggle Estado; new esconde os dois
+  $('p-delete-btn').style.display = p ? '' : 'none';
+  $('p-status-group').style.display = p ? '' : 'none';
+  projectModalStatusActive = p ? (p.active !== false) : true;
+  refreshProjectStatusUI();
+
+  projAvatarData = p?.avatar || null;
+  refreshProjectAvatarPreview();
 
   openModal('project-modal');
   navPush(id ? '/projects/' + id : '/projects/new');
 }
 
+function refreshProjectAvatarPreview() {
+  const el = $('p-avatar-preview');
+  if (!el) return;
+  if (projAvatarData) {
+    el.style.backgroundImage = `url('${projAvatarData}')`;
+    el.style.backgroundSize = 'cover';
+    el.style.backgroundPosition = 'center';
+    el.innerHTML = '';
+    el.style.background = `url('${projAvatarData}') center/cover no-repeat`;
+    $('p-avatar-remove').style.display = '';
+  } else {
+    el.style.backgroundImage = '';
+    el.style.background = '';
+    el.innerHTML = '<span style="color:var(--text-muted);font-size:12px">Sem foto</span>';
+    $('p-avatar-remove').style.display = 'none';
+  }
+}
+
+let projectModalStatusActive = true;
+function setProjectModalStatus(active) {
+  projectModalStatusActive = active;
+  refreshProjectStatusUI();
+}
+function refreshProjectStatusUI() {
+  document.querySelectorAll('.client-status-pick[data-pval]').forEach(b => {
+    b.classList.toggle('active', (b.dataset.pval === 'active') === projectModalStatusActive);
+  });
+}
+
+function openProjectDeleteConfirm() {
+  if (!editingProjectId) return;
+  const p = projectById(editingProjectId);
+  if (!p) return;
+  const linkedDemands = wsDemands().filter(d => d.projectId === p.id).length;
+  const linkedFlows = wsFlows().filter(f => f.projectId === p.id).length;
+  $('project-delete-title').textContent = `Excluir "${p.name}"?`;
+  $('project-delete-confirm-text').innerHTML = `Para confirmar, digite <strong>${esc(p.name)}</strong> abaixo:`;
+  const w = $('project-delete-warning');
+  const warns = [];
+  if (linkedDemands) warns.push(`<strong>${linkedDemands}</strong> demanda(s) vinculada(s) também serão removidas.`);
+  if (linkedFlows) warns.push(`<strong>${linkedFlows}</strong> fluxo(s) exclusivo(s) também serão removidos.`);
+  w.innerHTML = warns.join('<br>');
+  $('project-delete-input').value = '';
+  updateProjectDeleteBtnState();
+  openModal('project-delete-modal');
+}
+function updateProjectDeleteBtnState() {
+  const p = editingProjectId ? projectById(editingProjectId) : null;
+  const ok = !!(p && $('project-delete-input').value.trim() === p.name);
+  $('project-delete-confirm-btn').disabled = !ok;
+}
+async function confirmDeleteProjectTyped() {
+  if (!editingProjectId) return;
+  const id = editingProjectId;
+  try {
+    await api('/projects/' + id + '?force=1', 'DELETE');
+    closeModal('project-delete-modal');
+    closeModal('project-modal');
+    toast('Projeto excluído.', 'warn');
+    const ctxClientId = currentClientId;
+    await refreshData();
+    if (ctxClientId) renderClientDetail(ctxClientId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 async function saveProject() {
-  const clientId = $('p-client-select').value;
-  if (!clientId) { toast('Selecione um cliente cadastrado.', 'error'); return; }
+  const clientId = projectModalClientId;
+  if (!clientId) { toast('Cliente não definido.', 'error'); return; }
   const payload = {
     name: $('p-name').value,
     clientId,
-    color: $('p-color').value, active: $('p-active').checked,
-    workspaceId: $('p-workspace').value,
-    avatar: projAvatarData
+    color: $('p-color').value,
+    active: editingProjectId ? projectModalStatusActive : true,
+    avatar: projAvatarData,
+    driveFiles: $('p-drive-files').value,
+    brandAssets: $('p-brand-assets').value,
+    guidelines: $('p-guidelines').value
   };
   try {
     if (editingProjectId) await api('/projects/' + editingProjectId, 'PUT', payload);
@@ -5058,10 +5197,19 @@ async function saveProject() {
     closeModal('project-modal');
     toast(editingProjectId ? 'Projeto atualizado!' : 'Projeto criado!');
     const ctxClientId = currentClientId;
+    // Restaura URL antes do refresh (o modal trocou pra /projects/...)
+    if (ctxClientId) navPush('/clients/' + ctxClientId);
     await refreshData();
-    // Se o usuário tá vendo o painel do cliente, re-renderiza pra mostrar o novo projeto
-    if (ctxClientId) renderClientDetail(ctxClientId);
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    // Cliente inválido: cache local pode estar desatualizado. Sincroniza e instrui.
+    if (e.message && e.message.toLowerCase().includes('cliente inválido')) {
+      console.warn('[saveProject] clientId rejeitado pelo backend:', clientId, 'payload:', payload);
+      try { clients = await api('/clients'); } catch {}
+      toast('Cliente foi alterado em outro lugar. Recarregue a página (Ctrl+F5) e tente de novo.', 'error');
+    } else {
+      toast(e.message, 'error');
+    }
+  }
 }
 async function duplicateProject(id) {
   try {
@@ -5271,12 +5419,14 @@ function renderClientFlows(client) {
     const iconHtml = f.icon
       ? `<div class="flow-card-icon" style="background-image:url('${f.icon}');background-size:cover;background-position:center"></div>`
       : `<div class="flow-card-icon flow-card-icon--placeholder"><i data-lucide="workflow" class="ic-sm"></i></div>`;
-    return `<div class="flow-card flow-card-flow" onclick="openFlowModal('${f.id}')">
-      ${iconHtml}
-      <div class="flow-card-actions" onclick="event.stopPropagation()">
+    const adminActions = me.isAdmin ? `<div class="flow-card-actions" onclick="event.stopPropagation()">
         <button class="detail-icon-btn" title="Duplicar" onclick="openDuplicateFlow('${f.id}')"><i data-lucide="copy" class="ic-xs"></i></button>
         <button class="detail-icon-btn danger" title="Excluir" onclick="deleteFlow('${f.id}')"><i data-lucide="trash-2" class="ic-xs"></i></button>
-      </div>
+      </div>` : '';
+    const clickAttr = me.isAdmin ? `onclick="openFlowModal('${f.id}')"` : 'style="cursor:default"';
+    return `<div class="flow-card flow-card-flow" ${clickAttr}>
+      ${iconHtml}
+      ${adminActions}
       <div class="flow-card-name">${esc(f.name)}</div>
       <div class="flow-card-sub">${esc(f.demandType || 'Sem tipo')} · ${count} demanda${count === 1 ? '' : 's'}</div>
     </div>`;
@@ -5343,11 +5493,11 @@ function openFlowModal(id, presetClientId) {
   $('fl-apply-all').checked = false;
 
   stageRows = f
-    ? f.stages.map(s => ({ ...s }))
+    ? f.stages.map(s => ({ roleFilter: null, responsibleRole: null, ...s }))
     : [
-        { id: null, label: 'Backlog',   color: '#64748B', done: false, responsibleId: null, deadlineDays: null },
-        { id: null, label: 'Execução',  color: '#7A00FF', done: false, responsibleId: null, deadlineDays: 3 },
-        { id: null, label: 'Concluída', color: '#22D3A5', done: true,  responsibleId: null, deadlineDays: null }
+        { id: null, label: 'Backlog',   color: '#64748B', done: false, roleFilter: null, responsibleId: null, responsibleRole: null, deadlineDays: null },
+        { id: null, label: 'Execução',  color: '#7A00FF', done: false, roleFilter: null, responsibleId: null, responsibleRole: null, deadlineDays: 3 },
+        { id: null, label: 'Concluída', color: '#22D3A5', done: true,  roleFilter: null, responsibleId: null, responsibleRole: null, deadlineDays: null }
       ];
   renderStageRows();
   openModal('flow-modal');
@@ -5385,29 +5535,114 @@ function handleFlowIconUpload(ev) {
 }
 
 function renderStageRows() {
-  const sortedUsers = wsUsers().slice().sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
-  const respOpts = uid => '<option value="">— Sem responsável —</option>' +
-    sortedUsers.map(u => `<option value="${u.id}" ${uid === u.id ? 'selected' : ''}>${esc(u.name)}</option>`).join('');
-  $('stage-list').innerHTML = stageRows.map((s, i) => `
-    <div class="stage-row" draggable="true" data-idx="${i}"
+  // Mantém referência aos campos pra construir os dropdowns.
+  // Convenção de dados: cada stage guarda `roleFilter` (qual função foi
+  // escolhida) e UMA destas duas formas de responsável:
+  //   - responsibleId: id de usuário específico
+  //   - useClientDefault: true → resolver via client.roleAssignments[roleFilter]
+  // Persistimos como responsibleRole = roleFilter quando useClientDefault=true
+  // (compatível com o backend resolveStageOwner).
+  const allUsers = wsUsers().slice().sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+  const allRoles = (roles || []).slice().sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+  const hasClient = !!flowModalClientId;
+
+  $('stage-list').innerHTML = stageRows.map((s, i) => {
+    // Reconstrói o estado de UI a partir do que veio do backend
+    const roleFilter = s.roleFilter || s.responsibleRole || '';
+    const useDefault = !!s.responsibleRole && !s.responsibleId;
+    const userId = s.responsibleId || '';
+
+    // Função dropdown
+    const fnOpts = `<option value="">— Sem função —</option>` +
+      allRoles.map(r => `<option value="${esc(r.name)}" ${r.name === roleFilter ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+
+    // Responsável dropdown — filtrado pela função selecionada
+    let respHtml = '<option value="">— Sem responsável —</option>';
+    if (roleFilter) {
+      const filteredUsers = allUsers.filter(u => (u.role || '') === roleFilter);
+      if (hasClient) {
+        respHtml += `<option value="__client_default__" ${useDefault ? 'selected' : ''}>Padrão do cliente</option>`;
+      }
+      respHtml += filteredUsers.map(u =>
+        `<option value="${u.id}" ${u.id === userId ? 'selected' : ''}>${esc(u.name)}</option>`
+      ).join('');
+    } else {
+      // Sem função selecionada: mostra todos os usuários (libera assign direto)
+      respHtml += allUsers.map(u =>
+        `<option value="${u.id}" ${u.id === userId ? 'selected' : ''}>${esc(u.name)}</option>`
+      ).join('');
+    }
+
+    return `<div class="stage-row" draggable="true" data-idx="${i}"
          ondragstart="stageDragStart(event,${i})" ondragover="stageDragOver(event,${i})"
          ondragleave="stageDragLeave(event)" ondrop="stageDrop(event,${i})" ondragend="stageDragEnd()">
       <div class="stage-grip" title="Arraste para reordenar"><i data-lucide="grip-vertical" class="ic-sm"></i></div>
       <input type="color" class="stage-color" value="${s.color}" oninput="stageRows[${i}].color=this.value">
       <input class="form-control" value="${esc(s.label)}" placeholder="Nome da etapa" oninput="stageRows[${i}].label=this.value">
-      <select id="stage-resp-${i}" class="form-control stage-resp" title="Responsável padrão da etapa" onchange="stageRows[${i}].responsibleId=this.value||null">${respOpts(s.responsibleId)}</select>
+      <select id="stage-role-${i}" class="form-control stage-role" title="Função desta etapa" onchange="setStageRoleFilter(${i}, this.value)">${fnOpts}</select>
+      <select id="stage-resp-${i}" class="form-control stage-resp" title="Responsável padrão da etapa" onchange="setStageResponsible(${i}, this.value)">${respHtml}</select>
       <div class="stage-days-wrap"><span class="stage-mini-label">Prazo (dias)</span><input class="form-control" type="number" min="1" placeholder="—" value="${s.deadlineDays || ''}" oninput="stageRows[${i}].deadlineDays=this.value?Number(this.value):null"></div>
       <label class="stage-done-toggle"><input type="checkbox" ${s.done ? 'checked' : ''} onchange="stageRows[${i}].done=this.checked"> Conclui</label>
       <div class="stage-actions">
+        <button class="icon-btn" title="Duplicar etapa" onclick="duplicateStageRow(${i})"><i data-lucide="copy" class="ic-sm"></i></button>
         <button class="icon-btn danger" title="Remover etapa" onclick="removeStageRow(${i})"><i data-lucide="x" class="ic-sm"></i></button>
       </div>
-    </div>`).join('');
-  // Aplica dropdown customizado com avatar no select de responsável de cada etapa
+    </div>`;
+  }).join('');
+  // Dropdown customizado com avatar nos usuários (responsável). O de função
+  // fica como select nativo — não tem avatar pra exibir.
   stageRows.forEach((_, i) => applyFilterDropdown(`stage-resp-${i}`, { userIcon: true }));
   paintIcons();
 }
+
+function setStageRoleFilter(i, value) {
+  if (!stageRows[i]) return;
+  stageRows[i].roleFilter = value || null;
+  // Troca de função invalida o usuário escolhido (a menos que ele tenha essa função).
+  if (stageRows[i].responsibleId) {
+    const u = userById(stageRows[i].responsibleId);
+    if (!u || (u.role || '') !== value) {
+      stageRows[i].responsibleId = null;
+      stageRows[i].responsibleRole = null;
+    }
+  }
+  // Se "Padrão do cliente" estava marcado, atualiza pra apontar pra nova função
+  if (stageRows[i].responsibleRole) {
+    stageRows[i].responsibleRole = value || null;
+  }
+  renderStageRows(); // re-render imediato pra atualizar o dropdown de responsável
+}
+
+function setStageResponsible(i, value) {
+  if (!stageRows[i]) return;
+  if (!value) {
+    stageRows[i].responsibleId = null;
+    stageRows[i].responsibleRole = null;
+  } else if (value === '__client_default__') {
+    stageRows[i].responsibleRole = stageRows[i].roleFilter || null;
+    stageRows[i].responsibleId = null;
+  } else {
+    stageRows[i].responsibleId = value;
+    stageRows[i].responsibleRole = null;
+    // Auto-define a função baseada no usuário escolhido (consistência visual)
+    if (!stageRows[i].roleFilter) {
+      const u = userById(value);
+      if (u && u.role) stageRows[i].roleFilter = u.role;
+    }
+  }
+  // Re-render pra o trigger do .filter-cdrop refletir a escolha imediatamente
+  // (sem isso, a label visível só atualiza no próximo render).
+  renderStageRows();
+}
+
+function duplicateStageRow(i) {
+  if (!stageRows[i]) return;
+  const copy = { ...stageRows[i], id: null, label: (stageRows[i].label || '') + ' (cópia)' };
+  stageRows.splice(i + 1, 0, copy);
+  renderStageRows();
+}
 function addStageRow() {
-  stageRows.push({ id: null, label: '', color: '#7A00FF', done: false, responsibleId: null, deadlineDays: null });
+  stageRows.push({ id: null, label: '', color: '#7A00FF', done: false, roleFilter: null, responsibleId: null, responsibleRole: null, deadlineDays: null });
   renderStageRows();
   const inputs = $('stage-list').querySelectorAll('.stage-row input.form-control');
   if (inputs.length) inputs[inputs.length - 1].focus();
@@ -5516,16 +5751,15 @@ function renderWorkspaces() {
   $('ws-table-body').innerHTML = sorted.map(w => {
     const nProj = projects.filter(p => p.workspaceId === w.id).length;
     const nUsers = users.filter(u => u.active !== false && (u.isAdmin || (u.workspaces || []).includes(w.id))).length;
+    const actions = me.isAdmin ? `<div class="row-actions">
+          <button class="detail-icon-btn" title="Editar" onclick="openWsModal('${w.id}')"><i data-lucide="pencil" class="ic-sm"></i></button>
+          <button class="detail-icon-btn danger" title="Excluir" onclick="deleteWs('${w.id}')"><i data-lucide="trash-2" class="ic-sm"></i></button>
+        </div>` : '';
     return `<tr class="row-hover-actions">
       <td><span class="pill" style="color:${w.color || '#7A00FF'};background:${hexDim(w.color)}"><span class="pill-dot" style="background:${w.color || '#7A00FF'}"></span>${esc(w.name)}</span></td>
       <td>${nProj}</td>
       <td>${nUsers}</td>
-      <td>
-        <div class="row-actions">
-          <button class="detail-icon-btn" title="Editar" onclick="openWsModal('${w.id}')"><i data-lucide="pencil" class="ic-sm"></i></button>
-          <button class="detail-icon-btn danger" title="Excluir" onclick="deleteWs('${w.id}')"><i data-lucide="trash-2" class="ic-sm"></i></button>
-        </div>
-      </td>
+      <td>${actions}</td>
     </tr>`;
   }).join('');
 }
@@ -5599,15 +5833,13 @@ function renderUsers() {
       <td>${wsNames}</td>
       <td>${u.isAdmin ? '<span class="pill pill-admin">Admin</span>' : '<span class="pill pill-muted">Equipe</span>'}</td>
       <td>${u.active !== false ? '<span class="pill pill-success">Ativo</span>' : '<span class="pill pill-muted">Desativado</span>'}</td>
-      <td>
-        <div class="row-actions">
+      <td>${me.isAdmin ? `<div class="row-actions">
           <button class="detail-icon-btn" title="Editar" onclick="openUserModal('${u.id}')"><i data-lucide="pencil" class="ic-sm"></i></button>
           ${u.id !== me.id ? (u.active !== false
             ? `<button class="detail-icon-btn danger" title="Desativar" onclick="toggleUser('${u.id}')"><i data-lucide="user-x" class="ic-sm"></i></button>`
             : `<button class="detail-icon-btn" title="Reativar" onclick="toggleUser('${u.id}')"><i data-lucide="user-check" class="ic-sm"></i></button>`
           ) : ''}
-        </div>
-      </td>
+        </div>` : ''}</td>
     </tr>`;
   }).join('');
   renderRoles();
@@ -5632,15 +5864,14 @@ function renderRoles() {
   });
   $('roles-table-body').innerHTML = sorted.length ? sorted.map(r => {
     const count = users.filter(u => u.role === r.name && u.active !== false).length;
+    const actions = me.isAdmin ? `<div class="row-actions">
+          <button class="detail-icon-btn" title="Editar" onclick="openRoleModal('${r.id}')"><i data-lucide="pencil" class="ic-sm"></i></button>
+          <button class="detail-icon-btn danger" title="Excluir" onclick="deleteRole('${r.id}')"><i data-lucide="trash-2" class="ic-sm"></i></button>
+        </div>` : '';
     return `<tr class="row-hover-actions">
       <td><strong>${esc(r.name)}</strong></td>
       <td>${count} ${count === 1 ? 'usuário' : 'usuários'}</td>
-      <td>
-        <div class="row-actions">
-          <button class="detail-icon-btn" title="Editar" onclick="openRoleModal('${r.id}')"><i data-lucide="pencil" class="ic-sm"></i></button>
-          <button class="detail-icon-btn danger" title="Excluir" onclick="deleteRole('${r.id}')"><i data-lucide="trash-2" class="ic-sm"></i></button>
-        </div>
-      </td>
+      <td>${actions}</td>
     </tr>`;
   }).join('') : `<tr><td colspan="3">${emptyState('Nenhuma função cadastrada', 'Adicione funções para organizar a equipe.', 'users')}</td></tr>`;
 }
@@ -5695,12 +5926,11 @@ async function renderIntegrations() {
       <td>${h.format === 'discord' ? '<span class="pill" style="color:#5865f2;background:rgba(88,101,242,0.15);font-size:10px">Discord</span>' : '<span class="pill pill-muted" style="font-size:10px">Raw JSON</span>'}</td>
       <td>${eventChips}${moreCount > 0 ? `<span class="pill pill-muted" style="font-size:9px">+${moreCount}</span>` : ''}</td>
       <td>${statusPill}${h.lastError ? `<div style="font-size:10px;color:var(--danger);margin-top:2px">${esc(h.lastError.slice(0, 50))}</div>` : ''}</td>
-      <td>
-        <div class="row-actions">
+      <td>${me.isAdmin ? `<div class="row-actions">
           <button class="detail-icon-btn" title="Editar" onclick="openWebhookModal('${h.id}')"><i data-lucide="pencil" class="ic-sm"></i></button>
           <button class="detail-icon-btn" title="Enviar teste" onclick="testWebhookById('${h.id}')"><i data-lucide="send" class="ic-sm"></i></button>
           <button class="detail-icon-btn danger" title="Excluir" onclick="confirmDeleteWebhook('${h.id}')"><i data-lucide="trash-2" class="ic-sm"></i></button>
-        </div>
+        </div>` : ''}
       </td>
     </tr>`;
   }).join('') : `<tr><td colspan="6">${emptyState('Nenhuma integração cadastrada', 'Adicione um webhook para receber eventos das demandas em ferramentas externas como Discord, Slack, Make ou n8n.', 'webhook')}</td></tr>`;
@@ -6575,10 +6805,10 @@ function setClientStatusFilter(s) {
 }
 
 function renderClients() {
-  // Reseta pra view de grid
+  // Reseta pra view de grid. currentClientId já é tratado pelo dispatcher
+  // em renderCurrent('clients').
   $('clients-view-grid').style.display = '';
   $('clients-view-detail').style.display = 'none';
-  currentClientId = null;
 
   // Popula select de workspace
   const fwSel = $('client-f-ws');
@@ -6957,9 +7187,9 @@ async function saveClient() {
       : await api('/clients', 'POST', payload);
     closeModal('client-modal');
     toast(editingClientId ? 'Cliente atualizado!' : 'Cliente criado!');
+    // Se estava na tela de detalhe (URL /clients/<id>/edit), volta pro detalhe
+    if (currentClientId) navPush('/clients/' + currentClientId);
     await refreshData();
-    // Se estava na tela de detalhe, re-renderiza
-    if (currentClientId) renderClientDetail(currentClientId);
   } catch (e) {
     toast(e.message || 'Erro ao salvar cliente', 'error');
   }
@@ -7008,6 +7238,506 @@ async function confirmDeleteClient() {
 /* Atalho: abrir modal de projeto já com o cliente atual pré-selecionado */
 function openProjectModalForCurrentClient() {
   if (typeof openProjectModal === 'function') openProjectModal(null, currentClientId);
+}
+
+/* ─── AGENDA ────────────────────────────────────────────────────
+   Planejamento semanal por usuário. Bloco = (userId, demandId, date,
+   startMin, endMin). Grid renderizado como CSS Grid + blocos absolutos
+   posicionados nas colunas de dia via `grid-column`. */
+const AGENDA_DAY_START_MIN = 9 * 60;   // 09:00
+const AGENDA_DAY_END_MIN   = 18 * 60;  // 18:00
+const AGENDA_SLOT_MIN      = 15;       // 15min por linha (granularidade fina)
+const AGENDA_SLOT_PX       = 22;       // px por slot — tabela alta o suficiente sem virar 2 telas
+const AGENDA_LUNCH_MIN     = 12 * 60;  // 12:00–13:00 destacado
+let agendaUserId = null;          // usuário filtrado (default = me)
+let agendaWeekStart = null;       // segunda da semana atual visualizada
+let agendaWeeks = 2;              // 1 ou 2 semanas lado a lado
+let editingScheduleId = null;     // id do bloco sendo editado no modal
+let _agendaDrag = null;           // estado interno de drag
+
+function agendaWeekStartFor(d) {
+  const x = new Date(d);
+  x.setHours(0,0,0,0);
+  const dow = x.getDay(); // 0=dom, 1=seg...
+  const diff = (dow === 0 ? -6 : 1 - dow);
+  x.setDate(x.getDate() + diff);
+  return x;
+}
+function agendaYmd(d) {
+  return d.toISOString().slice(0, 10);
+}
+function agendaMinsToHHMM(mins) {
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+function agendaHHMMtoMins(s) {
+  const [h, m] = (s || '').split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+function agendaInit() {
+  if (!agendaUserId) agendaUserId = me?.id || null;
+  if (!agendaWeekStart) agendaWeekStart = agendaWeekStartFor(new Date());
+}
+function agendaPrevWeek() {
+  agendaWeekStart.setDate(agendaWeekStart.getDate() - 7);
+  renderAgenda();
+}
+function agendaNextWeek() {
+  agendaWeekStart.setDate(agendaWeekStart.getDate() + 7);
+  renderAgenda();
+}
+function agendaThisWeek() {
+  agendaWeekStart = agendaWeekStartFor(new Date());
+  renderAgenda();
+}
+function setAgendaView(n) {
+  agendaWeeks = n === 1 ? 1 : 2;
+  document.querySelectorAll('.agenda-view-btn').forEach(b => b.classList.toggle('active', Number(b.dataset.view) === agendaWeeks));
+  renderAgenda();
+}
+function onAgendaUserChange() {
+  agendaUserId = $('agenda-user').value || null;
+  renderAgenda();
+}
+
+/* Lista de dias úteis (seg-sex) no período visualizado */
+function agendaDays() {
+  agendaInit();
+  const days = [];
+  const totalDays = 7 * agendaWeeks;
+  const base = new Date(agendaWeekStart);
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(base);
+    d.setDate(base.getDate() + i);
+    const dow = d.getDay();
+    if (dow === 0 || dow === 6) continue;
+    days.push(d);
+  }
+  return days;
+}
+
+/* Layout das colunas: insere uma "coluna gap" entre semanas 1 e 2 na view de 2.
+   Retorna {cols, gridTemplate, dayColsCount} — cada `col` tem
+   { type:'day'|'gap', gridCol:number, day?:Date, dayIdx?:number }. */
+function agendaColumnsLayout() {
+  const days = agendaDays();
+  const cols = [];
+  const tmpl = ['60px']; // coluna de tempo (HORÁRIO)
+  let gridCol = 2;
+  days.forEach((d, i) => {
+    // Antes do 6º dia (segunda da semana 2) insere a divisória
+    if (agendaWeeks === 2 && i === 5) {
+      cols.push({ type: 'gap', gridCol });
+      tmpl.push('14px');
+      gridCol++;
+    }
+    cols.push({ type: 'day', day: d, dayIdx: i, gridCol });
+    tmpl.push('minmax(110px, 1fr)');
+    gridCol++;
+  });
+  return { cols, gridTemplate: tmpl.join(' '), days };
+}
+
+function renderAgenda() {
+  agendaInit();
+  // Popula select de usuários (só na página standalone /agenda)
+  const sel = $('agenda-user');
+  if (sel) {
+    const wsU = wsUsers().slice().sort((a,b) => norm(a.name).localeCompare(norm(b.name)));
+    sel.innerHTML = wsU.map(u =>
+      `<option value="${u.id}" ${u.id === agendaUserId ? 'selected' : ''}>${esc(u.name)}${u.id === me.id ? ' (você)' : ''}</option>`
+    ).join('');
+    if (!sel.value && wsU[0]) { agendaUserId = wsU[0].id; sel.value = agendaUserId; }
+  }
+  // Renderiza nos dois alvos possíveis — standalone (Agenda) e embed (Minhas Demandas)
+  renderAgendaInto('agenda-grid-wrap', 'agenda-week-label', agendaUserId);
+  renderAgendaInto('mine-agenda-grid-wrap', 'mine-agenda-week-label', me?.id || null);
+}
+
+function renderAgendaInto(wrapId, weekLabelId, userId) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return; // página não montada nesse momento
+  const days = agendaDays();
+  const first = days[0], last = days[days.length - 1];
+  const wkLabel = document.getElementById(weekLabelId);
+  if (wkLabel && first && last) {
+    const fmt = (d) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    wkLabel.textContent = `${fmt(first)} → ${fmt(last)}`;
+  }
+  if (!userId) { wrap.innerHTML = '<div class="agenda-empty">Sem usuário pra exibir.</div>'; return; }
+  buildAgendaGrid(wrap, userId, days);
+}
+
+function buildAgendaGrid(wrap, agendaUserIdLocal, days) {
+  if (!agendaUserIdLocal) { wrap.innerHTML = '<div class="agenda-empty">Selecione um usuário pra ver a agenda.</div>'; return; }
+
+  const slotsPerDay = Math.ceil((AGENDA_DAY_END_MIN - AGENDA_DAY_START_MIN) / AGENDA_SLOT_MIN);
+  const rows = slotsPerDay;
+  const layout = agendaColumnsLayout();
+  const dayCols = layout.cols.filter(c => c.type === 'day');
+
+  const grid = document.createElement('div');
+  grid.className = 'agenda-grid';
+  grid.style.gridTemplateColumns = layout.gridTemplate;
+  grid.style.gridTemplateRows = `auto repeat(${rows}, ${AGENDA_SLOT_PX}px)`;
+  grid.style.width = '100%';
+  // O grid carrega o userId alvo no dataset pra que handlers de drag/click
+  // (que podem ser de qualquer instância: standalone OU embed em Minhas Demandas)
+  // saibam pra quem agendar/editar — sem depender da variável global agendaUserId.
+  grid.dataset.userId = agendaUserIdLocal;
+
+  // Canto (0,0)
+  const corner = document.createElement('div');
+  corner.className = 'agenda-corner';
+  corner.style.gridRow = '1 / 2';
+  corner.style.gridColumn = '1 / 2';
+  grid.appendChild(corner);
+
+  const todayYmd = agendaYmd(new Date());
+  // Headers da linha 1 — itera sobre todas as colunas (day + gap)
+  layout.cols.forEach(c => {
+    if (c.type === 'gap') {
+      const gapHead = document.createElement('div');
+      gapHead.className = 'agenda-cell is-day-header is-week-gap';
+      gapHead.style.gridRow = '1 / 2';
+      gapHead.style.gridColumn = `${c.gridCol} / ${c.gridCol + 1}`;
+      grid.appendChild(gapHead);
+      return;
+    }
+    const d = c.day;
+    const head = document.createElement('div');
+    head.className = 'agenda-cell is-day-header';
+    if (agendaYmd(d) === todayYmd) head.classList.add('is-today');
+    const dayName = d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '').toUpperCase();
+    const dayDate = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    const dayMin = schedules
+      .filter(s => s.userId === agendaUserIdLocal && s.date === agendaYmd(d))
+      .reduce((sum, s) => sum + (s.endMin - s.startMin), 0);
+    const dayHours = dayMin / 60;
+    const capacityH = 8;
+    let capClass = '';
+    if (dayHours > capacityH) capClass = 'over';
+    else if (dayHours > capacityH * 0.85) capClass = 'high';
+    const capLabel = `${dayHours.toFixed(1).replace('.', ',')}h / ${capacityH}h`;
+    head.innerHTML = `<span>${esc(dayName)}</span><span class="day-date">${esc(dayDate)}</span><span class="day-cap ${capClass}">${esc(capLabel)}</span>`;
+    head.style.gridRow = '1 / 2';
+    head.style.gridColumn = `${c.gridCol} / ${c.gridCol + 1}`;
+    grid.appendChild(head);
+  });
+
+  // Linhas de horário + células. Granularidade 15min, mas só o :00 mostra label.
+  // Marcação fina: :30 ganha linha mais clara, demais ficam sutis.
+  for (let r = 0; r < rows; r++) {
+    const min = AGENDA_DAY_START_MIN + r * AGENDA_SLOT_MIN;
+    const onHour = (min % 60) === 0;
+    const onHalf = (min % 60) === 30;
+    const t = document.createElement('div');
+    t.className = 'agenda-cell is-time';
+    if (onHour) t.textContent = agendaMinsToHHMM(min);
+    t.style.gridRow = `${r + 2} / ${r + 3}`;
+    t.style.gridColumn = '1 / 2';
+    grid.appendChild(t);
+
+    layout.cols.forEach(c => {
+      const cell = document.createElement('div');
+      cell.className = 'agenda-cell';
+      if (c.type === 'gap') cell.classList.add('is-week-gap');
+      if (onHour) cell.classList.add('is-hour'); else if (onHalf) cell.classList.add('is-half-hour');
+      if (min >= AGENDA_LUNCH_MIN && min < AGENDA_LUNCH_MIN + 60) cell.classList.add('is-lunch');
+      cell.style.gridRow = `${r + 2} / ${r + 3}`;
+      cell.style.gridColumn = `${c.gridCol} / ${c.gridCol + 1}`;
+      if (c.type === 'day') {
+        cell.dataset.date = agendaYmd(c.day);
+        cell.dataset.min = String(min);
+        cell.addEventListener('mousedown', onAgendaCellMouseDown);
+      }
+      grid.appendChild(cell);
+    });
+  }
+
+  // Blocos por cima — grid-column EXPLÍCITO (start / end) é obrigatório
+  // pra item position:absolute respeitar a coluna. Sem isso, o item se
+  // estende até o fim do grid.
+  const userBlocks = schedules.filter(s => s.userId === agendaUserIdLocal);
+  userBlocks.forEach(s => {
+    const dayCol = dayCols.find(c => agendaYmd(c.day) === s.date);
+    if (!dayCol) return;
+    const startRow = Math.max(0, Math.floor((s.startMin - AGENDA_DAY_START_MIN) / AGENDA_SLOT_MIN));
+    const endRow = Math.min(rows, Math.ceil((s.endMin - AGENDA_DAY_START_MIN) / AGENDA_SLOT_MIN));
+    if (endRow <= startRow) return;
+    const demand = demands.find(x => x.id === s.demandId);
+    const project = demand ? projects.find(p => p.id === demand.projectId) : null;
+    const client = project && project.clientId ? clients.find(c => c.id === project.clientId) : null;
+    const color = project?.color || '#7A00FF';
+    const block = document.createElement('div');
+    block.className = 'agenda-block';
+    block.dataset.scheduleId = s.id;
+    block.style.gridRow = `${startRow + 2} / ${endRow + 2}`;
+    block.style.gridColumn = `${dayCol.gridCol} / ${dayCol.gridCol + 1}`;
+    block.style.background = color;
+    const projName = project ? project.name : '';
+    const clientName = client ? client.name : '';
+    const demandName = demand ? demand.name : '(demanda removida)';
+    const canEdit = !!(me && (me.isAdmin || s.userId === me.id));
+    const actions = canEdit ? `
+      <div class="agenda-block-actions">
+        <button class="agenda-block-action" title="Editar" data-action="edit"><i data-lucide="pencil" class="ic-xs"></i></button>
+        <button class="agenda-block-action danger" title="Excluir" data-action="delete"><i data-lucide="x" class="ic-xs"></i></button>
+      </div>` : '';
+    // Linha de cliente · projeto (ou só um deles se faltar)
+    const meta = [clientName, projName].filter(Boolean).join(' · ');
+    block.innerHTML = `
+      ${actions}
+      <div class="agenda-block-name">${esc(demandName)}</div>
+      ${meta ? `<div class="agenda-block-project">${esc(meta)}</div>` : ''}
+      ${canEdit ? '<div class="agenda-block-resize" data-resize="1"></div>' : ''}`;
+    block.addEventListener('mousedown', (e) => {
+      // Cliques nos botões de ação não disparam drag — tratados via click
+      if (e.target.closest('[data-action]')) return;
+      onAgendaBlockMouseDown(e, s, canEdit);
+    });
+    block.addEventListener('click', (e) => {
+      const actionBtn = e.target.closest('[data-action]');
+      if (actionBtn) {
+        e.stopPropagation();
+        if (actionBtn.dataset.action === 'edit') openScheduleModal(s.id);
+        else if (actionBtn.dataset.action === 'delete') confirmDeleteSchedule(s.id);
+        return;
+      }
+      if (!_agendaDrag || !_agendaDrag.moved) {
+        if (demand) showDetail(demand.id);
+      }
+    });
+    grid.appendChild(block);
+  });
+
+  wrap.innerHTML = '';
+  wrap.appendChild(grid);
+  paintIcons();
+}
+
+async function confirmDeleteSchedule(id) {
+  const ok = await showConfirm({
+    title: 'Excluir bloco',
+    message: 'Remover esse bloco da agenda?',
+    okLabel: 'Excluir',
+    danger: true
+  });
+  if (!ok) return;
+  try {
+    await api('/schedules/' + id, 'DELETE');
+    schedules = await api('/schedules');
+    renderAgenda();
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function deleteScheduleFromModal() {
+  if (!editingScheduleId) return;
+  try {
+    await api('/schedules/' + editingScheduleId, 'DELETE');
+    schedules = await api('/schedules');
+    closeModal('schedule-modal');
+    renderAgenda();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ── Drag-to-create ──
+   mousedown numa célula vazia, mousemove pinta ghost, mouseup abre modal. */
+function onAgendaCellMouseDown(e) {
+  if (e.button !== 0) return;
+  const cell = e.currentTarget;
+  const grid = cell.closest('.agenda-grid');
+  const targetUserId = grid?.dataset.userId || agendaUserId;
+  if (me && !me.isAdmin && targetUserId !== me.id) return;
+  e.preventDefault();
+  const date = cell.dataset.date;
+  const startMin = Number(cell.dataset.min);
+  _agendaDrag = { mode: 'create', date, startRow: startMin, endRow: startMin + AGENDA_SLOT_MIN, ghost: null, moved: false, targetUserId, grid };
+  document.addEventListener('mousemove', onAgendaCreateMove);
+  document.addEventListener('mouseup', onAgendaCreateUp, { once: true });
+  const ghost = document.createElement('div');
+  ghost.className = 'agenda-ghost';
+  ghost.style.gridColumn = cell.style.gridColumn;
+  ghost.style.gridRow = cell.style.gridRow;
+  grid.appendChild(ghost);
+  _agendaDrag.ghost = ghost;
+  _agendaDrag.ghostCol = cell.style.gridColumn;
+}
+function onAgendaCreateMove(e) {
+  if (!_agendaDrag || _agendaDrag.mode !== 'create') return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  if (!el) return;
+  const cell = el.classList && el.classList.contains('agenda-cell') ? el : el.closest('.agenda-cell');
+  if (!cell || !cell.dataset.min || cell.dataset.date !== _agendaDrag.date) return;
+  _agendaDrag.moved = true;
+  const cur = Number(cell.dataset.min) + AGENDA_SLOT_MIN;
+  _agendaDrag.endRow = Math.max(_agendaDrag.startRow + AGENDA_SLOT_MIN, cur);
+  const startRowIdx = Math.floor((_agendaDrag.startRow - AGENDA_DAY_START_MIN) / AGENDA_SLOT_MIN) + 2;
+  const endRowIdx = Math.ceil((_agendaDrag.endRow - AGENDA_DAY_START_MIN) / AGENDA_SLOT_MIN) + 2;
+  _agendaDrag.ghost.style.gridRow = `${startRowIdx} / ${endRowIdx}`;
+}
+function onAgendaCreateUp() {
+  document.removeEventListener('mousemove', onAgendaCreateMove);
+  if (_agendaDrag && _agendaDrag.ghost && _agendaDrag.ghost.parentNode) {
+    _agendaDrag.ghost.parentNode.removeChild(_agendaDrag.ghost);
+  }
+  if (_agendaDrag) {
+    openScheduleModal(null, { date: _agendaDrag.date, startMin: _agendaDrag.startRow, endMin: _agendaDrag.endRow, userId: _agendaDrag.targetUserId || agendaUserId });
+  }
+  _agendaDrag = null;
+}
+
+/* ── Drag-to-move + drag-to-resize ──
+   mousedown num bloco existente → ou move (corpo) ou resize (borda inferior).
+   Em move: ghost segue cursor e ancora em cell mais próxima.
+   Em resize: ajusta só o endMin. */
+function onAgendaBlockMouseDown(e, schedule, canEdit) {
+  if (!canEdit) return;
+  if (e.button !== 0) return;
+  e.stopPropagation();
+  e.preventDefault();
+  const isResize = !!(e.target.dataset && e.target.dataset.resize);
+  const block = e.currentTarget;
+  _agendaDrag = {
+    mode: isResize ? 'resize' : 'move',
+    scheduleId: schedule.id,
+    origDate: schedule.date,
+    origStart: schedule.startMin,
+    origEnd: schedule.endMin,
+    block,
+    moved: false
+  };
+  block.classList.add('dragging');
+  document.addEventListener('mousemove', onAgendaBlockMove);
+  document.addEventListener('mouseup', onAgendaBlockUp, { once: true });
+}
+function onAgendaBlockMove(e) {
+  if (!_agendaDrag) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  if (!el) return;
+  const cell = el.classList && el.classList.contains('agenda-cell') ? el : el.closest('.agenda-cell');
+  if (!cell || !cell.dataset.min || !cell.dataset.date) return; // ignora células de gap
+  const min = Number(cell.dataset.min);
+  if (_agendaDrag.mode === 'move') {
+    const duration = _agendaDrag.origEnd - _agendaDrag.origStart;
+    _agendaDrag.newDate = cell.dataset.date;
+    _agendaDrag.newStart = min;
+    _agendaDrag.newEnd = Math.min(AGENDA_DAY_END_MIN, min + duration);
+    _agendaDrag.moved = true;
+    // Preview no grid usando os mesmos grid-lines da célula alvo
+    const startRowIdx = Math.floor((_agendaDrag.newStart - AGENDA_DAY_START_MIN) / AGENDA_SLOT_MIN) + 2;
+    const endRowIdx = Math.ceil((_agendaDrag.newEnd - AGENDA_DAY_START_MIN) / AGENDA_SLOT_MIN) + 2;
+    _agendaDrag.block.style.gridRow = `${startRowIdx} / ${endRowIdx}`;
+    _agendaDrag.block.style.gridColumn = cell.style.gridColumn;
+  } else { // resize
+    const newEnd = Math.max(_agendaDrag.origStart + AGENDA_SLOT_MIN, min + AGENDA_SLOT_MIN);
+    if (newEnd === _agendaDrag.newEnd) return;
+    _agendaDrag.newEnd = Math.min(AGENDA_DAY_END_MIN, newEnd);
+    _agendaDrag.moved = true;
+    const startRowIdx = Math.floor((_agendaDrag.origStart - AGENDA_DAY_START_MIN) / AGENDA_SLOT_MIN) + 2;
+    const endRowIdx = Math.ceil((_agendaDrag.newEnd - AGENDA_DAY_START_MIN) / AGENDA_SLOT_MIN) + 2;
+    _agendaDrag.block.style.gridRow = `${startRowIdx} / ${endRowIdx}`;
+  }
+}
+async function onAgendaBlockUp() {
+  document.removeEventListener('mousemove', onAgendaBlockMove);
+  if (!_agendaDrag) return;
+  const drag = _agendaDrag;
+  drag.block.classList.remove('dragging');
+  _agendaDrag = null;
+  if (!drag.moved) return; // click puro, deixa o click handler abrir o detalhe
+  const payload = {};
+  if (drag.mode === 'move') {
+    payload.date = drag.newDate;
+    payload.startMin = drag.newStart;
+    payload.endMin = drag.newEnd;
+  } else {
+    payload.endMin = drag.newEnd;
+  }
+  console.log('[agenda drag]', drag.mode, 'schedule:', drag.scheduleId, 'payload:', payload);
+  try {
+    await api('/schedules/' + drag.scheduleId, 'PUT', payload);
+    schedules = await api('/schedules'); // refetch sempre — fonte da verdade é o backend
+    renderAgenda();
+  } catch (e) {
+    console.error('[agenda drag] PUT falhou:', e);
+    toast(e.message || 'Erro ao mover/redimensionar', 'error');
+    renderAgenda();
+  }
+}
+
+/* ── Modal de agendar/editar bloco ── */
+let _schedulePresetUserId = null; // userId do contexto de criação
+function openScheduleModal(id, preset) {
+  editingScheduleId = id || null;
+  _schedulePresetUserId = preset?.userId || null;
+  const s = id ? schedules.find(x => x.id === id) : null;
+  $('schedule-modal-title').textContent = s ? 'Editar bloco' : 'Agendar bloco';
+  // Popula select de demandas — SÓ demandas atribuídas ao usuário selecionado,
+  // ativas no workspace acessível. Em modo edição, mantém a demanda atual
+  // mesmo que não esteja mais atribuída a esse user.
+  const sel = $('sch-demand');
+  const wsId = activeWs;
+  const ownerUid = s ? s.userId : (preset?.userId || agendaUserId);
+  let list = demands
+    .filter(d => d.workspaceId === wsId)
+    .filter(d => d.ownerId === ownerUid)
+    .sort((a,b) => norm(a.name).localeCompare(norm(b.name)));
+  // Se editando e a demanda atual não está mais no usuário, força ela na lista
+  if (s && !list.some(d => d.id === s.demandId)) {
+    const cur = demands.find(d => d.id === s.demandId);
+    if (cur) list.unshift(cur);
+  }
+  const currentDemandId = s ? s.demandId : '';
+  if (!list.length) {
+    sel.innerHTML = '<option value="">— Esse usuário não tem demandas atribuídas —</option>';
+  } else {
+    sel.innerHTML = '<option value="">— Selecione uma demanda —</option>' + list.map(d => {
+      const p = projects.find(pp => pp.id === d.projectId);
+      const c = p && p.clientId ? clients.find(cc => cc.id === p.clientId) : null;
+      const meta = [c?.name, p?.name].filter(Boolean).join(' · ');
+      const lbl = meta ? `${d.name} — ${meta}` : d.name;
+      return `<option value="${d.id}" ${d.id === currentDemandId ? 'selected' : ''}>${esc(lbl)}</option>`;
+    }).join('');
+  }
+  const date = (s ? s.date : preset?.date) || agendaYmd(new Date());
+  const startMin = s ? s.startMin : (preset?.startMin || AGENDA_DAY_START_MIN);
+  const endMin = s ? s.endMin : (preset?.endMin || (startMin + 60));
+  $('sch-date').value = date;
+  $('sch-start').value = agendaMinsToHHMM(startMin);
+  $('sch-end').value = agendaMinsToHHMM(endMin);
+  // "Quando" texto amigável
+  const userName = userById(s ? s.userId : (preset?.userId || agendaUserId))?.name || '—';
+  $('sch-when').textContent = `Para ${userName}`;
+  $('sch-delete-btn').style.display = s ? '' : 'none';
+  openModal('schedule-modal');
+}
+async function saveSchedule() {
+  const demandId = $('sch-demand').value;
+  if (!demandId) { toast('Selecione uma demanda.', 'error'); return; }
+  const date = $('sch-date').value;
+  const startMin = agendaHHMMtoMins($('sch-start').value);
+  const endMin = agendaHHMMtoMins($('sch-end').value);
+  if (endMin <= startMin) { toast('Horário final precisa ser depois do início.', 'error'); return; }
+  const payload = { demandId, date, startMin, endMin };
+  // Pra criar (não-edição), respeita o usuário do contexto: o `_schedulePresetUserId`
+  // é setado pelo openScheduleModal a partir do preset (drag em qualquer instância).
+  if (!editingScheduleId) payload.userId = _schedulePresetUserId || agendaUserId;
+  console.log('[saveSchedule] payload:', payload, 'editingId:', editingScheduleId);
+  try {
+    if (editingScheduleId) {
+      await api('/schedules/' + editingScheduleId, 'PUT', payload);
+    } else {
+      await api('/schedules', 'POST', payload);
+    }
+    // Refetch do servidor — garante que o frontend mostra exatamente o que está
+    // persistido (sem depender de splice/push manual no array local).
+    schedules = await api('/schedules');
+    closeModal('schedule-modal');
+    renderAgenda();
+  } catch (e) {
+    console.error('[saveSchedule] falhou:', e);
+    toast(e.message || 'Erro ao salvar', 'error');
+  }
 }
 
 /* ─── START ─── */

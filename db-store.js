@@ -18,7 +18,7 @@ const path = require('node:path');
 
 const ENTITY_TYPES = [
   'workspaces', 'users', 'clients', 'projects', 'flows',
-  'demands', 'roles', 'templates', 'webhooks'
+  'demands', 'roles', 'templates', 'webhooks', 'schedules'
 ];
 
 function createStore(dataDir) {

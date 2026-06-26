@@ -1,6 +1,10 @@
 /* ───────────────────────────────────────────────
    KASTOR — Design System (base original preservada)
    ─────────────────────────────────────────────── */
+/* Usuários não-admin: oculta qualquer elemento marcado como admin-only.
+   A classe é alternada em body via renderSidebarUser(). */
+body.user-readonly .admin-only { display: none !important; }
+
 /* Light mode — sobrescreve as variáveis quando :root tem data-theme="light".
    Mantém o accent #7A00FF como brand; ajusta contrastes para fundo claro (WCAG AA). */
 :root[data-theme="light"] {
@@ -300,9 +304,9 @@ body::before {
 .avatar-lg { width: 84px; height: 84px; font-size: 28px; }
 .sidebar-user-name { font-weight: 600; font-size: 12.5px; letter-spacing: -0.005em; }
 .sidebar-user-role { color: var(--text-muted); font-size: 11px; margin-top: 1px; }
-.sidebar-nav { flex: 1; padding: 10px 12px; display: flex; flex-direction: column; gap: 1px; overflow-y: auto; }
+.sidebar-nav { flex: 1; padding: 14px 12px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
 .nav-item {
-  display: flex; align-items: center; gap: 10px; padding: 8px 11px;
+  display: flex; align-items: center; gap: 10px; padding: 10px 11px;
   border-radius: var(--radius-sm); font-size: 13px; font-weight: 500;
   color: var(--text-dim); cursor: pointer; text-decoration: none;
   transition: background .15s var(--ease-out), color .15s var(--ease-out), transform .12s var(--ease-spring);
@@ -527,6 +531,7 @@ tr:hover td { background: var(--surface-2); }
 .filter-cdrop.filtering .filter-cdrop-trigger { border-color: var(--accent); background: var(--accent-dim); color: var(--accent-text); }
 .filter-cdrop-label { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .filter-cdrop-avatar { width: 20px !important; height: 20px !important; font-size: 9px !important; flex-shrink: 0; }
+.filter-cdrop-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(255,255,255,0.06) inset; }
 .filter-cdrop-menu {
   position: absolute; top: calc(100% + 6px); left: 0; min-width: 100%; z-index: 60;
   background: var(--surface);
@@ -537,7 +542,11 @@ tr:hover td { background: var(--surface-2); }
   max-height: 320px; overflow-y: auto; display: none; white-space: nowrap;
 }
 .filter-cdrop.open .filter-cdrop-menu { display: block; animation: cdropIn .18s var(--ease-out); }
+/* Drop-up: menu abre PRA CIMA quando não cabe abaixo (auto-aplicado em toggleFilterCdrop) */
+.filter-cdrop.drop-up .filter-cdrop-menu { top: auto; bottom: calc(100% + 6px); }
+.filter-cdrop.drop-up.open .filter-cdrop-menu { animation: cdropInUp .18s var(--ease-out); }
 @keyframes cdropIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes cdropInUp { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 .filter-cdrop-item {
   display: flex; align-items: center; gap: 8px; padding: 8px 11px;
   border-radius: 8px; cursor: pointer; font-size: 12px; color: var(--text);
@@ -933,6 +942,7 @@ textarea.form-control { height: auto; min-height: 80px; padding: 11px 14px; }
   display: none;
 }
 .user-select.open .user-select-menu { display: block; }
+.user-select.drop-up .user-select-menu { top: auto; bottom: calc(100% + 4px); }
 .user-select-opt {
   display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-sm);
   cursor: pointer; font-size: 13px; transition: background .12s;
@@ -971,7 +981,8 @@ textarea.form-control { height: auto; min-height: 80px; padding: 11px 14px; }
 
 /* Editor de fluxo — etapas arrastáveis */
 .stage-row {
-  display: grid; grid-template-columns: 26px 34px 1.4fr 1.2fr 78px auto auto;
+  /* grip | color | label | função | responsável | prazo | conclui | ações */
+  display: grid; grid-template-columns: 22px 34px minmax(140px, 1.4fr) minmax(140px, 1fr) minmax(160px, 1.1fr) 78px auto auto;
   gap: 8px; align-items: center;
   background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
   padding: 8px 10px;
@@ -1436,6 +1447,162 @@ i[data-lucide]:not([class*=ic-]) { width: 16px; height: 16px; stroke-width: 2; }
 .demand-att-name:hover { color: var(--accent-text); text-decoration: underline; }
 .demand-att-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; cursor: pointer; }
 .demand-att-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+/* Botões de anexo do modal de demanda — caixas paralelas (Arquivo / Imagem / Link) */
+.demand-att-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+.demand-att-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 18px; min-width: 110px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text); font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: border-color .15s, background .15s;
+}
+.demand-att-btn:hover { border-color: var(--accent-text); background: var(--surface-3, var(--surface-2)); }
+.demand-att-btn i { color: var(--text-muted); }
+
+/* ─── AGENDA ───────────────────────────────────────────
+   Grade tipo planilha: HORÁRIO (1 col fixa) × N dias úteis.
+   Cada linha = 30min. Blocos posicionados absolutamente sobre as células.
+   2 semanas lado a lado mostra 10 colunas de dia. */
+.agenda-toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.agenda-toolbar .form-label { margin: 0; }
+.agenda-user-pick { display: flex; align-items: center; gap: 8px; }
+.agenda-user-pick select { min-width: 220px; }
+.agenda-week-nav { display: flex; align-items: center; gap: 6px; }
+.agenda-week-label { font-size: 13px; color: var(--text); font-weight: 600; min-width: 220px; text-align: center; }
+.agenda-spacer { flex: 1; }
+.agenda-view-toggle { display: inline-flex; gap: 4px; background: var(--surface-2); padding: 3px; border-radius: var(--radius-sm); }
+.agenda-view-btn { font-size: 12px !important; padding: 5px 11px !important; }
+.agenda-view-btn.active { background: var(--accent-dim) !important; color: var(--accent-text) !important; }
+.agenda-hint { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.6; }
+
+.agenda-grid-wrap { width: 100%; overflow-x: auto; }
+.agenda-grid {
+  display: grid;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  overflow: hidden;
+  position: relative;
+  user-select: none;
+}
+.agenda-cell {
+  border-right: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface);
+  position: relative;
+  min-height: 26px;
+}
+.agenda-cell.is-time {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 8px;
+  display: flex; align-items: flex-start; justify-content: flex-end;
+  font-family: 'JetBrains Mono', monospace;
+  position: sticky; left: 0; z-index: 2;
+}
+.agenda-cell.is-half { background: var(--surface-2); opacity: 0.5; }
+/* Granularidade de 15min: hora cheia ganha borda superior mais forte;
+   :30 fica intermediário; :15/:45 mantêm a borda fina padrão. */
+.agenda-cell.is-hour { border-top: 1px solid var(--border); }
+.agenda-cell.is-half-hour { border-top: 1px dashed rgba(255,255,255,0.04); }
+.agenda-cell.is-lunch { background: repeating-linear-gradient(45deg, var(--surface), var(--surface) 6px, var(--surface-2) 6px, var(--surface-2) 12px); }
+.agenda-cell.is-day-header {
+  background: var(--surface-2); color: var(--text); font-weight: 600;
+  font-size: 11px; padding: 8px 6px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  position: sticky; top: 0; z-index: 3;
+  border-bottom: 1px solid var(--border);
+}
+.agenda-cell.is-day-header.is-today { background: var(--accent-dim); color: var(--accent-text); }
+.agenda-cell.is-day-header .day-date { font-size: 13px; font-weight: 700; letter-spacing: 0; }
+.agenda-cell.is-day-header .day-cap {
+  font-size: 9.5px; font-weight: 500; color: var(--text-muted); margin-top: 2px;
+  letter-spacing: 0;
+}
+.agenda-cell.is-day-header .day-cap.over { color: var(--danger); }
+.agenda-cell.is-day-header .day-cap.high { color: var(--warn, #F59E0B); }
+
+.agenda-corner {
+  background: var(--surface-2);
+  position: sticky; top: 0; left: 0; z-index: 4;
+  border-bottom: 1px solid var(--border); border-right: 1px solid var(--hairline);
+}
+
+.agenda-cell.drop-target { background: var(--accent-dim); }
+/* Divisória entre semanas — coluna estreita com listras pra deixar claro o corte */
+.agenda-cell.is-week-gap {
+  background: repeating-linear-gradient(180deg, var(--surface-2), var(--surface-2) 4px, var(--surface) 4px, var(--surface) 8px);
+  pointer-events: none;
+}
+.agenda-cell.is-day-header.is-week-gap { background: var(--surface-2); }
+
+/* Bloco posicionado sobre as células do grid.
+   IMPORTANTE: posicionado como item de grid (sem `position: absolute`), pra que
+   `grid-row: start / end` realmente determine a ALTURA do bloco. Antes, com
+   position:absolute sem top/bottom, o bloco caía pra altura natural do conteúdo
+   (texto), independente de quanto tempo a demanda durava — bug do "card só
+   mostra 30 min mesmo agendado das 10:30 às 18:00". */
+.agenda-block {
+  border-radius: var(--radius-sm);
+  padding: 4px 8px; font-size: 11px; margin: 0 2px;
+  color: #fff; cursor: grab; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: flex-start;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2), inset 0 0 0 1px rgba(255,255,255,0.08);
+  transition: box-shadow .12s;
+  position: relative; /* base pros filhos absolutos (actions, resize) */
+  z-index: 5;
+}
+.agenda-block:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.15); }
+/* Durante o drag, o bloco precisa ser TRANSPARENTE a eventos de mouse pra que
+   `document.elementFromPoint` enxergue a célula embaixo (em vez do próprio
+   bloco). Sem isso, o resize só "subia" — não tinha como encolher porque o
+   cursor passava por cima do bloco e nunca achava o slot alvo. */
+.agenda-block.dragging { cursor: grabbing; opacity: 0.6; z-index: 20; pointer-events: none; }
+.agenda-block-name { font-weight: 600; line-height: 1.25; word-break: break-word; }
+.agenda-block-project { font-size: 10px; opacity: 0.85; line-height: 1.2; margin-top: 1px; }
+/* Handle de redimensionar — sempre visível, mais alto e descoberta clara */
+.agenda-block-resize {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 10px;
+  cursor: ns-resize; z-index: 5;
+  background: linear-gradient(0deg, rgba(0,0,0,0.18), rgba(0,0,0,0));
+}
+.agenda-block-resize::after {
+  content: ''; position: absolute; left: 50%; bottom: 2px; width: 28px; height: 3px;
+  transform: translateX(-50%); background: rgba(255,255,255,0.55); border-radius: 2px;
+  transition: background .12s, width .12s;
+}
+.agenda-block-resize:hover::after { background: rgba(255,255,255,1); width: 36px; }
+/* Ações do bloco (editar/excluir) — aparecem no hover, top-right */
+.agenda-block-actions {
+  position: absolute; top: 3px; right: 3px;
+  display: flex; gap: 2px;
+  opacity: 0; transition: opacity .12s;
+  z-index: 2;
+}
+.agenda-block:hover .agenda-block-actions { opacity: 1; }
+.agenda-block-action {
+  width: 20px; height: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.35); color: rgba(255,255,255,0.95);
+  border: none; border-radius: 4px; cursor: pointer; padding: 0;
+}
+.agenda-block-action:hover { background: rgba(0,0,0,0.6); }
+.agenda-block-action.danger:hover { background: var(--danger); }
+
+/* Ghost durante drag-to-create */
+.agenda-ghost {
+  position: absolute; left: 2px; right: 2px;
+  background: var(--accent-dim);
+  border: 1px dashed var(--accent-text);
+  border-radius: var(--radius-sm);
+  z-index: 6; pointer-events: none;
+}
+
+.agenda-empty {
+  padding: 60px 20px; text-align: center; color: var(--text-muted); font-size: 13px;
+}
 
 /* ── AUTO-LINKS dentro de texto ── */
 .auto-link { color: var(--accent-text); text-decoration: underline; word-break: break-all; }

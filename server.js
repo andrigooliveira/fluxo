@@ -188,6 +188,7 @@ function migrate() {
   }
 
   if (!Array.isArray(db.clients)) db.clients = [];
+  if (!Array.isArray(db.schedules)) db.schedules = [];
   db.projects.forEach(p => { if (!p.workspaceId) p.workspaceId = defWs; });
 
   // Migração: promover `project.client` (string) → entidade Client.
@@ -255,6 +256,8 @@ function migrate() {
     }
     (f.stages || []).forEach(s => {
       if (s.responsibleId === undefined) s.responsibleId = null;
+      if (s.responsibleRole === undefined) s.responsibleRole = null;
+      if (s.roleFilter === undefined) s.roleFilter = s.responsibleRole || null;
       if (s.deadlineDays === undefined) s.deadlineDays = null;
     });
   });
@@ -1446,27 +1449,23 @@ app.get('/api/projects', requireAuth, (req, res) => {
 });
 
 app.post('/api/projects', requireAuth, (req, res) => {
-  const { name, client, clientId, color, workspaceId, avatar } = req.body || {};
+  const { name, client, clientId, color, avatar, driveFiles, brandAssets, guidelines } = req.body || {};
   if (!String(name || '').trim()) return res.status(400).json({ error: 'Nome do projeto é obrigatório' });
-  const ws = workspaceId && canAccessWs(req.user, workspaceId) ? workspaceId : wsIdsFor(req.user)[0];
-  if (!ws) return res.status(400).json({ error: 'Selecione um workspace válido' });
-  // Resolve clientId — agora obrigatório existir antes (cadastrado em /clients).
-  // Não cria mais cliente automático a partir de string livre.
+  // Cliente é obrigatório e tem que existir; workspace deriva do cliente.
   let clientEntity = null;
   if (clientId) {
-    clientEntity = db.clients.find(c => c.id === clientId && c.workspaceId === ws);
+    clientEntity = db.clients.find(c => c.id === clientId);
     if (!clientEntity) return res.status(400).json({ error: 'Cliente inválido. Cadastre o cliente na aba "Clientes" antes.' });
   } else if (client && String(client).trim()) {
-    // Compat: aceita nome, mas SÓ se já existe. Não cria mais.
     const cname = String(client).trim();
-    clientEntity = db.clients.find(c =>
-      c.workspaceId === ws && (c.name || '').toLowerCase() === cname.toLowerCase()
-    );
+    clientEntity = db.clients.find(c => (c.name || '').toLowerCase() === cname.toLowerCase());
     if (!clientEntity) return res.status(400).json({ error: `Cliente "${cname}" não cadastrado. Crie em "Clientes" antes.` });
   } else {
     return res.status(400).json({ error: 'Selecione um cliente cadastrado pro projeto.' });
   }
-  // Avatar: aceita /uploads/, extrai base64 pro disco
+  if (!canAccessWs(req.user, clientEntity.workspaceId)) {
+    return res.status(403).json({ error: 'Sem acesso ao workspace deste cliente.' });
+  }
   let avatarUrl = null;
   if (avatar) {
     if (String(avatar).startsWith('/uploads/')) avatarUrl = avatar;
@@ -1476,11 +1475,14 @@ app.post('/api/projects', requireAuth, (req, res) => {
     }
   }
   const p = {
-    id: uid(), workspaceId: ws, name: String(name).trim(),
-    clientId: clientEntity ? clientEntity.id : null,
-    client: clientEntity ? clientEntity.name : '', // legacy field, mantém sincronizado
+    id: uid(), workspaceId: clientEntity.workspaceId, name: String(name).trim(),
+    clientId: clientEntity.id,
+    client: clientEntity.name, // legacy field, mantém sincronizado
     color: color || '#7A00FF',
     avatar: avatarUrl,
+    driveFiles: typeof driveFiles === 'string' ? normalizeUrlSrv(driveFiles) : '',
+    brandAssets: typeof brandAssets === 'string' ? normalizeUrlSrv(brandAssets) : '',
+    guidelines: typeof guidelines === 'string' ? guidelines : '',
     active: true, createdAt: nowISO()
   };
   db.projects.push(p);
@@ -1491,8 +1493,11 @@ app.post('/api/projects', requireAuth, (req, res) => {
 app.put('/api/projects/:id', requireAuth, (req, res) => {
   const p = db.projects.find(x => x.id === req.params.id);
   if (!p || !canAccessWs(req.user, p.workspaceId)) return res.status(404).json({ error: 'Projeto não encontrado' });
-  const { name, client, clientId, color, active, workspaceId, avatar } = req.body || {};
+  const { name, client, clientId, color, active, workspaceId, avatar, driveFiles, brandAssets, guidelines } = req.body || {};
   if (typeof name === 'string' && name.trim()) p.name = name.trim();
+  if (typeof driveFiles === 'string') p.driveFiles = normalizeUrlSrv(driveFiles);
+  if (typeof brandAssets === 'string') p.brandAssets = normalizeUrlSrv(brandAssets);
+  if (typeof guidelines === 'string') p.guidelines = guidelines;
   // Re-vincular a outro cliente (ou nenhum)
   if (clientId !== undefined) {
     if (!clientId) { p.clientId = null; p.client = ''; }
@@ -1582,12 +1587,30 @@ function sanitizeStages(stages) {
     label: String(s.label || '').trim(),
     color: s.color || '#7A00FF',
     done: !!s.done,
-    responsibleId: s.responsibleId || null,
+    // roleFilter: função da etapa (UI usa pra filtrar o dropdown de responsável).
+    // responsibleId (user específico) e responsibleRole ("padrão do cliente"
+    // resolvido via client.roleAssignments) são mutuamente exclusivos. Se ambos vierem, role vence.
+    roleFilter: s.roleFilter ? String(s.roleFilter).trim() : (s.responsibleRole ? String(s.responsibleRole).trim() : null),
+    responsibleId: s.responsibleRole ? null : (s.responsibleId || null),
+    responsibleRole: s.responsibleRole ? String(s.responsibleRole).trim() : null,
     deadlineDays: Number(s.deadlineDays) > 0 ? Math.round(Number(s.deadlineDays)) : null
   })).filter(s => s.label);
   if (clean.length < 2) return null;
   if (!clean.some(s => s.done)) clean[clean.length - 1].done = true;
   return clean;
+}
+
+// Resolve o responsável de uma etapa pra uma demanda específica.
+// Se a etapa aponta pra um usuário, retorna o id. Se aponta pra uma função
+// (responsibleRole), busca em client.roleAssignments[role].
+function resolveStageOwner(stage, project) {
+  if (!stage) return null;
+  if (stage.responsibleRole) {
+    const c = project && project.clientId ? db.clients.find(x => x.id === project.clientId) : null;
+    const uid = c && c.roleAssignments ? c.roleAssignments[stage.responsibleRole] : null;
+    return uid || null;
+  }
+  return stage.responsibleId || null;
 }
 
 app.post('/api/flows', requireAuth, adminOnly, (req, res) => {
@@ -1823,7 +1846,7 @@ app.post('/api/demands', requireAuth, (req, res) => {
     estimatedHours: Number(b.estimatedHours) > 0 ? Math.round(Number(b.estimatedHours) * 100) / 100 : null,
     priority: [1,2,3,4].includes(Number(b.priority)) ? Number(b.priority) : 3,
     status: stage.id,
-    ownerId: b.ownerId || stage.responsibleId || null,
+    ownerId: b.ownerId || resolveStageOwner(stage, project) || null,
     stageEnteredAt: nowISO(), stageDueDate: stageDue,
     stageHistory: [{ stageId: stage.id, enteredAt: nowISO(), dueDate: stageDue }],
     timeEntries: [], comments: [], history: [],
@@ -1997,7 +2020,8 @@ app.put('/api/demands/:id', requireAuth, (req, res) => {
     // Override por instância (d.stageResponsibles[stageId]) tem precedência sobre o padrão do fluxo.
     if (b.ownerId === undefined) {
       const instOverride = (d.stageResponsibles && typeof d.stageResponsibles === 'object') ? d.stageResponsibles[stage.id] : undefined;
-      const autoOwner = (instOverride !== undefined) ? instOverride : (stage.responsibleId || null);
+      const projForResolve = db.projects.find(p => p.id === d.projectId);
+      const autoOwner = (instOverride !== undefined) ? instOverride : (resolveStageOwner(stage, projForResolve) || null);
       if (autoOwner) {
         const prevOwner = d.ownerId;
         d.ownerId = autoOwner;
@@ -2418,8 +2442,95 @@ app.delete('/api/demands/:id/checklist/:itemId', requireAuth, (req, res) => {
   res.json(d);
 });
 
+/* ── AGENDA / SCHEDULES ──
+   Bloco = (userId, demandId, date YYYY-MM-DD, startMin, endMin).
+   Minutos a partir da meia-noite — sem fuso horário, simples e robusto.
+   Permissão: dono OU admin pode criar/editar/excluir; visualização é livre
+   pra qualquer autenticado dentro do workspace. */
+function getSchedule(id) { return db.schedules.find(s => s.id === id); }
+function canEditSchedule(user, s) { return user.isAdmin || s.userId === user.id; }
+function sanitizeScheduleBody(b) {
+  const date = String(b.date || '').match(/^\d{4}-\d{2}-\d{2}$/) ? b.date : null;
+  const startMin = Number.isInteger(Number(b.startMin)) ? Math.max(0, Math.min(1439, Number(b.startMin))) : null;
+  const endMin = Number.isInteger(Number(b.endMin)) ? Math.max(1, Math.min(1440, Number(b.endMin))) : null;
+  if (!date || startMin === null || endMin === null || endMin <= startMin) return null;
+  return { date, startMin, endMin };
+}
+app.get('/api/schedules', requireAuth, (req, res) => {
+  const ids = wsIdsFor(req.user);
+  const userId = req.query.userId || null;
+  const from = req.query.from || null; // YYYY-MM-DD
+  const to = req.query.to || null;
+  const list = db.schedules.filter(s => {
+    if (!ids.includes(s.workspaceId)) return false;
+    if (userId && s.userId !== userId) return false;
+    if (from && s.date < from) return false;
+    if (to && s.date > to) return false;
+    return true;
+  });
+  res.json(list);
+});
+app.post('/api/schedules', requireAuth, (req, res) => {
+  const b = req.body || {};
+  const userId = b.userId || req.user.id;
+  if (userId !== req.user.id && !req.user.isAdmin) {
+    return res.status(403).json({ error: 'Só admins podem agendar pra outros usuários.' });
+  }
+  const user = db.users.find(u => u.id === userId);
+  if (!user) return res.status(400).json({ error: 'Usuário inválido' });
+  const demand = db.demands.find(d => d.id === b.demandId);
+  if (!demand) return res.status(400).json({ error: 'Demanda inválida' });
+  if (!canAccessWs(req.user, demand.workspaceId)) return res.status(403).json({ error: 'Sem acesso ao workspace da demanda' });
+  const fields = sanitizeScheduleBody(b);
+  if (!fields) return res.status(400).json({ error: 'Data e horários inválidos (endMin deve ser > startMin).' });
+  const s = {
+    id: uid(),
+    workspaceId: demand.workspaceId,
+    userId,
+    demandId: demand.id,
+    ...fields,
+    createdAt: nowISO(),
+    createdBy: req.user.id
+  };
+  db.schedules.push(s);
+  saveEntity('schedules', s);
+  res.status(201).json(s);
+});
+app.put('/api/schedules/:id', requireAuth, (req, res) => {
+  const s = getSchedule(req.params.id);
+  if (!s || !canAccessWs(req.user, s.workspaceId)) return res.status(404).json({ error: 'Agendamento não encontrado' });
+  if (!canEditSchedule(req.user, s)) return res.status(403).json({ error: 'Você só edita os próprios agendamentos.' });
+  const b = req.body || {};
+  if (b.demandId && b.demandId !== s.demandId) {
+    const d = db.demands.find(x => x.id === b.demandId);
+    if (!d) return res.status(400).json({ error: 'Demanda inválida' });
+    s.demandId = d.id;
+    s.workspaceId = d.workspaceId;
+  }
+  // Aceita mudança parcial (apenas data, só horário, etc) — só re-valida se vier
+  if (b.date || b.startMin !== undefined || b.endMin !== undefined) {
+    const merged = sanitizeScheduleBody({
+      date: b.date || s.date,
+      startMin: b.startMin !== undefined ? b.startMin : s.startMin,
+      endMin: b.endMin !== undefined ? b.endMin : s.endMin
+    });
+    if (!merged) return res.status(400).json({ error: 'Data ou horários inválidos.' });
+    s.date = merged.date; s.startMin = merged.startMin; s.endMin = merged.endMin;
+  }
+  saveEntity('schedules', s);
+  res.json(s);
+});
+app.delete('/api/schedules/:id', requireAuth, (req, res) => {
+  const s = getSchedule(req.params.id);
+  if (!s) return res.status(404).json({ error: 'Agendamento não encontrado' });
+  if (!canEditSchedule(req.user, s)) return res.status(403).json({ error: 'Você só remove os próprios agendamentos.' });
+  db.schedules = db.schedules.filter(x => x.id !== s.id);
+  removeEntity('schedules', s.id);
+  res.json({ ok: true });
+});
+
 /* ── WEBHOOKS ── */
-app.get('/api/webhooks', requireAuth, adminOnly, (req, res) => {
+app.get('/api/webhooks', requireAuth, (req, res) => {
   const ids = wsIdsFor(req.user);
   res.json((db.webhooks || []).filter(h => ids.includes(h.workspaceId)));
 });
@@ -2694,7 +2805,7 @@ function runRecurrenceJob() {
       estimatedHours: parent.estimatedHours,
       priority: parent.priority || 3,
       status: stage.id,
-      ownerId: parent.ownerId || stage.responsibleId || null,
+      ownerId: parent.ownerId || resolveStageOwner(stage, project) || null,
       stageEnteredAt: nowISO(), stageDueDate: stageDue,
       stageHistory: [{ stageId: stage.id, enteredAt: nowISO(), dueDate: stageDue }],
       timeEntries: [], comments: [], history: [],

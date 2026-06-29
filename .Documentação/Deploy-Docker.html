@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kastor — Deploy em Docker (Portainer)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ─── DESIGN TOKENS ─────────────────────────────────────────────── */
+:root {
+  --bg: #161616;
+  --surface: #1f1f1f;
+  --surface-2: #2a2a2a;
+  --surface-3: #353535;
+  --text: #ECECEC;
+  --text-dim: #B8B8B8;
+  --text-muted: #8a8a8a;
+  --accent: #7A00FF;
+  --accent-text: #B380FF;
+  --accent-dim: rgba(122, 0, 255, 0.18);
+  --success: #3CE3A0;
+  --danger: #EF5050;
+  --warn: #F5A718;
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline-strong: rgba(255, 255, 255, 0.14);
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --sidebar-w: 280px;
+}
+:root[data-theme="light"] {
+  --bg: #F7F7F8;
+  --surface: #FFFFFF;
+  --surface-2: #F1F1F3;
+  --surface-3: #E7E7EA;
+  --text: #1A1A1A;
+  --text-dim: #4A4A4A;
+  --text-muted: #757575;
+  --accent-text: #5E00CC;
+  --hairline: rgba(0, 0, 0, 0.08);
+  --hairline-strong: rgba(0, 0, 0, 0.14);
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  font-size: 15px;
+  line-height: 1.65;
+  letter-spacing: -0.003em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(800px 600px at 12% 8%, rgba(122, 0, 255, 0.10), transparent 60%),
+    radial-gradient(700px 500px at 88% 90%, rgba(122, 0, 255, 0.06), transparent 65%);
+  pointer-events: none;
+}
+:root[data-theme="light"] body::before {
+  background:
+    radial-gradient(800px 600px at 12% 8%, rgba(122, 0, 255, 0.06), transparent 60%),
+    radial-gradient(700px 500px at 88% 90%, rgba(122, 0, 255, 0.04), transparent 65%);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 36px 24px 32px;
+  border-right: 1px solid var(--hairline);
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.12);
+}
+:root[data-theme="light"] .sidebar { background: rgba(0, 0, 0, 0.02); }
+.sidebar::-webkit-scrollbar { width: 6px; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--hairline-strong); border-radius: 3px; }
+.brand { display: flex; align-items: baseline; gap: 8px; }
+.brand-logo {
+  font-size: 18px; font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, var(--text), var(--accent-text));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.brand-tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+  background: var(--accent-dim);
+  padding: 3px 7px;
+  border-radius: 4px;
+}
+.brand-sub {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin: 6px 0 28px;
+  letter-spacing: 0.01em;
+}
+.toc-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 14px 0 10px;
+}
+.toc { display: flex; flex-direction: column; gap: 1px; }
+.toc a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+  transition: background .12s var(--ease), color .12s var(--ease);
+  letter-spacing: -0.005em;
+}
+.toc a:hover { background: var(--surface-2); color: var(--text); }
+.toc a.active { background: var(--accent-dim); color: var(--accent-text); font-weight: 600; }
+.toc-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  min-width: 18px;
+}
+.toc a.active .toc-num { color: var(--accent-text); }
+.sidebar-foot { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--hairline); }
+.theme-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .12s var(--ease);
+}
+.theme-toggle:hover { background: var(--surface-3); color: var(--text); }
+.theme-icon { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; }
+.docs-other {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.docs-other a { color: var(--accent-text); text-decoration: none; border-bottom: 1px dotted currentColor; }
+.docs-other a:hover { color: var(--accent); }
+
+/* ─── MOBILE TOC ────────────────────────────────────────────────── */
+.mobile-menu-btn {
+  display: none;
+  position: fixed; top: 14px; left: 14px;
+  z-index: 100;
+  width: 38px; height: 38px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+  align-items: center; justify-content: center;
+  box-shadow: var(--shadow);
+}
+.mobile-backdrop {
+  display: none;
+  position: fixed; inset: 0;
+  z-index: 90;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+/* ─── CONTENT ───────────────────────────────────────────────────── */
+.content {
+  padding: 56px 64px 96px;
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.hero {
+  padding-bottom: 40px;
+  margin-bottom: 40px;
+  border-bottom: 1px solid var(--hairline);
+}
+.hero-eyebrow {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px;
+  background: var(--accent-dim);
+  color: var(--accent-text);
+  border-radius: 50px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+.hero h1 {
+  margin: 0 0 12px;
+  font-size: 48px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  background: linear-gradient(135deg, var(--text), var(--accent-text));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero-subtitle {
+  font-size: 17px;
+  color: var(--text-dim);
+  margin: 0 0 18px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.hero-lead {
+  font-size: 14.5px;
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 640px;
+  line-height: 1.7;
+}
+.hero-lead a { color: var(--accent-text); text-decoration: none; border-bottom: 1px dashed currentColor; }
+
+section { scroll-margin-top: 24px; }
+h2 {
+  margin: 70px 0 18px;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  display: flex; align-items: baseline; gap: 14px;
+}
+h2 .h2-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent-dim);
+  padding: 4px 9px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0;
+}
+h3 { margin: 36px 0 12px; font-size: 18px; font-weight: 700; letter-spacing: -0.015em; color: var(--text); }
+h4 { margin: 24px 0 10px; font-size: 14px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+
+p { margin: 0 0 14px; color: var(--text-dim); }
+strong { color: var(--text); font-weight: 700; }
+em { color: var(--text); font-style: italic; }
+a { color: var(--accent-text); text-decoration: none; border-bottom: 1px dotted currentColor; transition: color .12s; }
+a:hover { color: var(--accent); }
+ul, ol { margin: 8px 0 18px; padding-left: 22px; color: var(--text-dim); }
+li { margin: 4px 0; line-height: 1.65; }
+li > strong:first-child { color: var(--text); }
+
+code:not(pre code) {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.88em;
+  background: var(--surface-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--accent-text);
+  border: 1px solid var(--hairline);
+}
+pre {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin: 14px 0 22px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.6;
+  position: relative;
+}
+pre code {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text);
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  display: block;
+}
+pre .c { color: var(--text-muted); font-style: italic; }
+pre .s { color: #B5E5A1; }
+pre .k { color: var(--accent-text); font-weight: 600; }
+pre .n { color: #FFAB70; }
+pre .p { color: var(--text); }
+pre .f { color: #82C9F0; }
+:root[data-theme="light"] pre .s { color: #047a04; }
+:root[data-theme="light"] pre .n { color: #b25502; }
+:root[data-theme="light"] pre .f { color: #0951b1; }
+
+.table-wrap {
+  margin: 18px 0 22px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--hairline); }
+th { background: var(--surface-2); font-weight: 600; color: var(--text); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+tr:last-child td { border-bottom: none; }
+tbody tr { transition: background .1s; }
+tbody tr:hover { background: var(--surface-2); }
+td code { font-size: 0.85em; }
+
+.callout {
+  margin: 18px 0 22px;
+  padding: 14px 18px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-dim);
+  border-radius: 6px;
+  font-size: 13.5px;
+  color: var(--text);
+}
+.callout-warn { border-color: var(--warn); background: rgba(245, 167, 24, 0.10); }
+.callout-danger { border-color: var(--danger); background: rgba(239, 80, 80, 0.10); }
+.callout-success { border-color: var(--success); background: rgba(60, 227, 160, 0.10); }
+.callout strong { color: var(--text); }
+
+hr { margin: 50px 0; border: none; border-top: 1px solid var(--hairline); }
+
+.ascii {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 22px;
+  margin: 18px 0 24px;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  white-space: pre;
+}
+
+h2, h3 { position: relative; }
+h2 .anchor, h3 .anchor {
+  position: absolute;
+  left: -22px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 0.7em;
+  text-decoration: none;
+  transition: opacity .12s;
+  border: none;
+  padding-right: 6px;
+}
+h2:hover .anchor, h3:hover .anchor { opacity: 1; }
+h2 .anchor:hover, h3 .anchor:hover { color: var(--accent-text); }
+
+.back-to-top {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  width: 44px; height: 44px;
+  background: var(--surface);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 50%;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity .2s var(--ease), transform .2s var(--ease), color .12s;
+  z-index: 50;
+}
+.back-to-top.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.back-to-top:hover { color: var(--accent-text); border-color: var(--accent-text); }
+
+/* "Etapas" — passos numerados visualmente fortes (para o passo-a-passo Portainer) */
+.steps { counter-reset: step; padding: 0; list-style: none; margin: 18px 0 24px; }
+.steps > li {
+  counter-increment: step;
+  position: relative;
+  padding: 14px 18px 14px 56px;
+  margin: 0 0 10px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 16px; top: 12px;
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent-dim);
+  color: var(--accent-text);
+  border-radius: 50%;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+.steps > li strong { color: var(--text); }
+.steps > li code { font-size: 0.85em; }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar {
+    position: fixed;
+    left: 0; top: 0;
+    z-index: 95;
+    width: 280px;
+    transform: translateX(-100%);
+    transition: transform .25s var(--ease);
+  }
+  body.menu-open .sidebar { transform: translateX(0); }
+  body.menu-open .mobile-backdrop { display: block; }
+  .mobile-menu-btn { display: inline-flex; }
+  .content {
+    padding: 70px 24px 80px;
+  }
+  .hero h1 { font-size: 36px; }
+  .hero-subtitle { font-size: 15px; }
+  h2 { font-size: 22px; margin-top: 50px; }
+  h3 { font-size: 16px; }
+}
+@media (max-width: 500px) {
+  .content { padding: 70px 16px 60px; }
+  table { font-size: 12px; }
+  th, td { padding: 9px 12px; }
+}
+</style>
+</head>
+<body>
+
+<button class="mobile-menu-btn" onclick="document.body.classList.toggle('menu-open')" aria-label="Abrir menu">
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 6h14M3 10h14M3 14h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+</button>
+<div class="mobile-backdrop" onclick="document.body.classList.remove('menu-open')"></div>
+
+<div class="layout">
+
+<aside class="sidebar">
+  <div class="brand">
+    <span class="brand-logo">Kastor</span>
+    <span class="brand-tag">Deploy</span>
+  </div>
+  <div class="brand-sub">Docker · Portainer · Nginx Proxy Manager</div>
+
+  <div class="toc-title">Conteúdo</div>
+  <nav class="toc" id="toc">
+    <a href="#visao-geral"><span class="toc-num">01</span>Visão geral</a>
+    <a href="#pre-requisitos"><span class="toc-num">02</span>Pré-requisitos</a>
+    <a href="#arquivos"><span class="toc-num">03</span>Arquivos da stack</a>
+    <a href="#env"><span class="toc-num">04</span>Variáveis de ambiente</a>
+    <a href="#volume"><span class="toc-num">05</span>Volume e persistência</a>
+    <a href="#portainer"><span class="toc-num">06</span>Deploy no Portainer</a>
+    <a href="#cli"><span class="toc-num">07</span>Deploy via CLI</a>
+    <a href="#dominio"><span class="toc-num">08</span>Domínio e HTTPS</a>
+    <a href="#migracao"><span class="toc-num">09</span>Migrar dados</a>
+    <a href="#backup"><span class="toc-num">10</span>Backup e restore</a>
+    <a href="#update"><span class="toc-num">11</span>Atualizar a app</a>
+    <a href="#logs"><span class="toc-num">12</span>Logs e healthcheck</a>
+    <a href="#troubleshooting"><span class="toc-num">13</span>Troubleshooting</a>
+    <a href="#seguranca"><span class="toc-num">14</span>Checklist de segurança</a>
+  </nav>
+
+  <div class="docs-other">
+    Doc do desenvolvedor: <a href="README.html">README.html</a>
+  </div>
+
+  <div class="sidebar-foot">
+    <button class="theme-toggle" onclick="toggleTheme()">
+      <span id="theme-label">Modo claro</span>
+      <span class="theme-icon" id="theme-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      </span>
+    </button>
+  </div>
+</aside>
+
+<main class="content">
+
+<header class="hero">
+  <span class="hero-eyebrow">Guia operacional</span>
+  <h1>Deploy em Docker</h1>
+  <p class="hero-subtitle">Subir o Kastor na sua VPS via Portainer (ou docker-compose CLI)</p>
+  <p class="hero-lead">
+    Este documento descreve, do zero, como colocar o Kastor rodando em um servidor
+    Docker existente — convivendo com outros serviços (Chatwoot, e-commerce etc).
+    Cobre construção da imagem, persistência em volume, exposição via Nginx Proxy
+    Manager, migração de dados de uma instalação local, backup, atualização e
+    troubleshooting. Para entender o código por dentro, consulte
+    <a href="README.html">README.html</a>.
+  </p>
+</header>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<section id="visao-geral">
+<h2><span class="h2-num">01</span>Visão geral <a href="#visao-geral" class="anchor">#</a></h2>
+
+<p>
+  O Kastor é um <strong>monolito Node.js</strong> que serve tanto o backend (Express
+  + SQLite) quanto o frontend estático (SPA vanilla) na mesma porta. Em produção,
+  ele roda como <strong>um único container</strong> Docker. Não há dependência
+  externa em runtime: nem Postgres, nem Redis, nem worker queue. Tudo o que ele
+  precisa pra persistir vive em um único diretório (<code>/app/data</code> dentro
+  do container), montado em um <strong>volume Docker</strong>.
+</p>
+
+<div class="ascii">
+┌──────────────────────────────────────────────────────────────┐
+│  VPS                                                         │
+│                                                              │
+│   ┌─────────────────┐         ┌──────────────────────────┐   │
+│   │  Nginx Proxy    │  HTTPS  │  Container: kastor       │   │
+│   │  Manager        │ ──────► │  Port 3000 (interno)     │   │
+│   │  (Cloudflare    │         │  Node 22 + SQLite        │   │
+│   │   ou outro)     │         │                          │   │
+│   └─────────────────┘         │  Mount: /app/data        │   │
+│       ▲                       └──────────┬───────────────┘   │
+│       │                                  │                   │
+│       │ kastor.seu-                      ▼                   │
+│       │ dominio.com                ┌──────────┐              │
+│       │                            │  Volume  │              │
+│       │                            │  kastor_ │              │
+│   internet                         │  data    │              │
+│                                    └──────────┘              │
+└──────────────────────────────────────────────────────────────┘
+</div>
+
+<p>Você só interage com 3 coisas:</p>
+<ul>
+  <li><strong>Stack no Portainer</strong> — define o container, env vars e o volume.</li>
+  <li><strong>Volume <code>kastor_data</code></strong> — guarda tudo (banco SQLite, uploads, secret de criptografia).</li>
+  <li><strong>Nginx Proxy Manager</strong> — recebe o tráfego HTTPS do domínio e encaminha pra porta interna do container.</li>
+</ul>
+
+<div class="callout">
+  <strong>Não tem build step no frontend.</strong> O HTML/CSS/JS é servido como está pelo Express. Você atualiza a app fazendo <code>git pull</code> + recriar o container — nada de webpack/vite.
+</div>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<section id="pre-requisitos">
+<h2><span class="h2-num">02</span>Pré-requisitos <a href="#pre-requisitos" class="anchor">#</a></h2>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Item</th><th>Versão mínima</th><th>Notas</th></tr></thead>
+<tbody>
+<tr><td>Docker Engine</td><td>20.10+</td><td>Já vem na maioria das VPS Linux. <code>docker --version</code></td></tr>
+<tr><td>Docker Compose</td><td>v2 (plugin)</td><td>Sintaxe é <code>docker compose</code> (sem hífen).</td></tr>
+<tr><td>Portainer CE</td><td>2.20+ (opcional)</td><td>Recomendado pra gerenciar sem CLI.</td></tr>
+<tr><td>Nginx Proxy Manager</td><td>2.10+ (opcional)</td><td>Recomendado pra HTTPS automático via Let's Encrypt.</td></tr>
+<tr><td>Acesso ao GitHub</td><td>—</td><td>Stack vai buildar a partir do repo. Privado precisa de PAT.</td></tr>
+<tr><td>DNS configurado</td><td>—</td><td>Apontar subdomínio (ex.: <code>kastor.dominio.com</code>) pro IP da VPS.</td></tr>
+<tr><td>Porta livre no host</td><td>—</td><td>Default <code>8080</code>. Veja com <code>ss -tlnp</code>.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Não precisa ter Node.js instalado no host — tudo roda dentro do container.</p>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<section id="arquivos">
+<h2><span class="h2-num">03</span>Arquivos da stack <a href="#arquivos" class="anchor">#</a></h2>
+
+<p>4 arquivos na raiz do repositório fazem toda a mágica acontecer:</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Arquivo</th><th>Função</th></tr></thead>
+<tbody>
+<tr><td><code>Dockerfile</code></td><td>Receita da imagem: Node 22-alpine, instala deps, expõe porta 3000, define healthcheck.</td></tr>
+<tr><td><code>docker-compose.yml</code></td><td>Define a stack: 1 service <code>kastor</code>, mapeamento de porta, volume, env vars, healthcheck.</td></tr>
+<tr><td><code>.dockerignore</code></td><td>Mantém <code>node_modules/</code>, <code>data/</code>, <code>.env</code>, <code>.git</code> etc fora do build context.</td></tr>
+<tr><td><code>.env.example</code></td><td>Template das env vars. Copie pra <code>.env</code> local OU cole no Portainer.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>O que o Dockerfile faz, em prosa</h3>
+<ol>
+  <li>Parte de <strong><code>node:22-alpine</code></strong> (imagem ~80MB). Node 22.5+ é obrigatório porque o backend usa o módulo built-in <code>node:sqlite</code>.</li>
+  <li>Copia só <strong><code>package*.json</code></strong> primeiro e roda <code>npm install --omit=dev</code>. Isso aproveita o cache do Docker — só re-instala dependências se elas mudaram.</li>
+  <li>Copia o restante do código (respeitando o <code>.dockerignore</code>).</li>
+  <li>Cria <strong><code>/app/data</code></strong> e o declara como <code>VOLUME</code> — sinal pro Docker de que ali vão dados que devem sobreviver entre recriações.</li>
+  <li>Define <code>HEALTHCHECK</code> que faz <code>wget</code> em <code>/</code>. Se voltar 200, container é "healthy".</li>
+  <li><code>CMD ["node", "server.js"]</code> sobe a app.</li>
+</ol>
+
+<h3>O que o docker-compose.yml define</h3>
+<ul>
+  <li><strong>Service <code>kastor</code></strong> com <code>restart: unless-stopped</code> — sobe automático após reboot da VPS.</li>
+  <li><strong>Porta</strong>: <code>${HOST_PORT:-8080}:3000</code> — externa configurável via env, interna fixa em 3000.</li>
+  <li><strong>Env vars</strong>: todas as variáveis do app (lista completa em <a href="#env">§04</a>).</li>
+  <li><strong>Volume</strong>: <code>kastor_data:/app/data</code> — sobrevive a rebuilds.</li>
+  <li><strong>Healthcheck</strong>: cada 30s o Docker verifica se a app responde.</li>
+</ul>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<section id="env">
+<h2><span class="h2-num">04</span>Variáveis de ambiente <a href="#env" class="anchor">#</a></h2>
+
+<p>Defina no Portainer (aba "Environment variables" da Stack) ou via <code>.env</code> no diretório do compose.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Variável</th><th>Default</th><th>Descrição</th></tr></thead>
+<tbody>
+<tr><td><code>HOST_PORT</code></td><td><code>8080</code></td><td>Porta exposta no host. Conflita com Chatwoot se usar 3000.</td></tr>
+<tr><td><code>PORT</code></td><td><code>3000</code></td><td>Porta interna do container. Não muda em geral.</td></tr>
+<tr><td><code>KASTOR_DATA_DIR</code></td><td><code>/app/data</code></td><td>Onde fica banco, uploads, secret.bin. Bate com o mount.</td></tr>
+<tr><td><code>PUBLIC_URL</code></td><td>—</td><td>URL pública sem barra final. Usada nos emails de reset.</td></tr>
+<tr><td><code>FLUXO_SECRET</code></td><td>(auto)</td><td>Hex 64 chars pra criptografar sessões. <code>openssl rand -hex 32</code>.</td></tr>
+<tr><td><code>KASTOR_SESSION_DAYS</code></td><td><code>30</code></td><td>Dias até a sessão expirar.</td></tr>
+<tr><td><code>SMTP_HOST</code></td><td>—</td><td>Servidor SMTP (Gmail, Sendgrid, etc).</td></tr>
+<tr><td><code>SMTP_PORT</code></td><td><code>587</code></td><td>TLS na 587; SSL na 465.</td></tr>
+<tr><td><code>SMTP_USER</code></td><td>—</td><td>Usuário SMTP.</td></tr>
+<tr><td><code>SMTP_PASS</code></td><td>—</td><td>Senha/app password.</td></tr>
+<tr><td><code>SMTP_SECURE</code></td><td><code>false</code></td><td><code>true</code> só pra porta 465.</td></tr>
+<tr><td><code>SMTP_FROM</code></td><td>(deriva)</td><td>Header From. Ex.: <code>Kastor &lt;noreply@dominio.com&gt;</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout-success callout">
+  <strong>Mínimo viável:</strong> <code>HOST_PORT</code>, <code>PUBLIC_URL</code>, <code>FLUXO_SECRET</code>. Sem SMTP a app sobe normal — só não envia email de reset.
+</div>
+
+<div class="callout-warn callout">
+  <strong>Sobre o FLUXO_SECRET:</strong> se você deixar vazio, o app gera um e guarda em <code>data/secret.bin</code>. Funciona, mas se você jogar o volume fora, <em>todas as sessões existentes expiram</em>. Em produção, defina explicitamente e <strong>guarde num lugar seguro</strong> (cofre de senhas).
+</div>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<section id="volume">
+<h2><span class="h2-num">05</span>Volume e persistência <a href="#volume" class="anchor">#</a></h2>
+
+<p>Tudo que o Kastor precisa preservar vive em <strong><code>/app/data</code></strong> dentro do container, montado como volume Docker:</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Arquivo</th><th>Conteúdo</th></tr></thead>
+<tbody>
+<tr><td><code>data/kastor.db</code></td><td>SQLite — usuários, workspaces, clientes, projetos, fluxos, demandas, schedules, anexos (metadata).</td></tr>
+<tr><td><code>data/kastor.db-wal</code> + <code>-shm</code></td><td>Arquivos de Write-Ahead Log. Sempre junto com o .db.</td></tr>
+<tr><td><code>data/uploads/</code></td><td>Anexos de demandas, avatares, ícones de fluxo (extraídos de base64 pra disco).</td></tr>
+<tr><td><code>data/secret.bin</code></td><td>Chave de criptografia auto-gerada (só se <code>FLUXO_SECRET</code> não foi definido).</td></tr>
+<tr><td><code>data/auth.enc</code></td><td>Tokens de sessão criptografados.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Por default, o compose declara um volume nomeado:</p>
+<pre><code><span class="k">volumes</span><span class="p">:</span>
+  <span class="k">kastor_data</span><span class="p">:</span></code></pre>
+
+<p>O nome real do volume na sua VPS vai ser <strong><code>NOMESTACK_kastor_data</code></strong> — onde <code>NOMESTACK</code> é o nome que você deu à Stack no Portainer. Ex.: Stack <code>kastor</code> → volume <code>kastor_kastor_data</code>. Confira com:</p>
+<pre><code>docker volume ls | grep kastor</code></pre>
+
+<div class="callout-warn callout">
+  <strong>Nunca</strong> faça bind mount apontando direto pra uma pasta do host (<code>./data:/app/data</code>) em produção. Permissões podem dar errado entre o usuário do container e o do host. Volume nomeado é o caminho seguro.
+</div>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<section id="portainer">
+<h2><span class="h2-num">06</span>Deploy no Portainer <a href="#portainer" class="anchor">#</a></h2>
+
+<p>Caminho recomendado: cria a Stack <strong>a partir do repositório do GitHub</strong>. Assim, basta dar "redeploy" pra atualizar.</p>
+
+<ol class="steps">
+  <li>
+    <strong>Tenha o código no GitHub.</strong> O repo precisa ter os 4 arquivos
+    da §03 na raiz. Se o repo é privado, gere um Personal Access Token (PAT)
+    no GitHub com escopo <code>repo</code>.
+  </li>
+  <li>
+    <strong>Aponte o DNS</strong> do subdomínio (ex.: <code>kastor.seudominio.com</code>)
+    pro IP público da VPS. Tipo <code>A</code>. Pode levar alguns minutos pra
+    propagar — não bloqueia o deploy, só o HTTPS depois.
+  </li>
+  <li>
+    <strong>Portainer → Stacks → Add Stack.</strong>
+    <ul>
+      <li><strong>Name</strong>: <code>kastor</code> (vira prefixo do volume)</li>
+      <li><strong>Build method</strong>: <em>Repository</em></li>
+      <li><strong>Repository URL</strong>: cole o URL do seu GitHub</li>
+      <li><strong>Repository reference</strong>: <code>refs/heads/main</code> (ou a branch que quiser)</li>
+      <li><strong>Compose path</strong>: <code>docker-compose.yml</code></li>
+      <li>Se o repo é privado: marque "Authentication" e cole o PAT</li>
+    </ul>
+  </li>
+  <li>
+    <strong>Environment variables</strong>: na seção abaixo, adicione todas as
+    variáveis da §04 que você quer setar. Mínimo: <code>HOST_PORT</code>,
+    <code>PUBLIC_URL</code>, <code>FLUXO_SECRET</code>. Se for usar email, adicione
+    as <code>SMTP_*</code>.
+  </li>
+  <li>
+    <strong>Deploy the stack.</strong> O Portainer faz <code>git clone</code> +
+    <code>docker compose up --build -d</code>. Primeira build leva ~1–2min
+    (download da imagem Node + <code>npm install</code>). Próximas reusam o
+    cache e ficam segundos.
+  </li>
+  <li>
+    <strong>Verifique nos logs do container</strong> (ícone de página em Containers
+    → <code>kastor</code> → Logs). Você deve ver algo como:
+    <code>fluxo. rodando em → http://localhost:3000</code>. Se ver, tá no ar.
+  </li>
+  <li>
+    <strong>Teste o acesso direto via IP+porta</strong> antes de mexer com HTTPS:
+    <code>http://IP_DA_VPS:8080</code> deve mostrar a tela de login.
+    Credenciais default: <code>admin</code> / <code>admin123</code> (trocar
+    imediatamente no perfil).
+  </li>
+</ol>
+
+<div class="callout">
+  <strong>Atualizar a stack depois</strong>: Portainer → Stacks → <code>kastor</code> → "Pull and redeploy". Ele puxa as últimas mudanças do GitHub, rebuilda e sobe sem perder o volume. Detalhes em <a href="#update">§11</a>.
+</div>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<section id="cli">
+<h2><span class="h2-num">07</span>Deploy via CLI <a href="#cli" class="anchor">#</a></h2>
+
+<p>Se preferir terminal puro (sem Portainer):</p>
+
+<pre><code><span class="c"># 1. Clone o repo na VPS</span>
+git clone https://github.com/SEU_USER/fluxo.git kastor
+<span class="k">cd</span> kastor
+
+<span class="c"># 2. Crie o .env com base no template</span>
+cp .env.example .env
+nano .env    <span class="c"># preencha HOST_PORT, PUBLIC_URL, FLUXO_SECRET, SMTP_*</span>
+
+<span class="c"># 3. Suba</span>
+docker compose up -d --build
+
+<span class="c"># 4. Acompanhe os logs até ver "rodando em"</span>
+docker compose logs -f kastor</code></pre>
+
+<p>Comandos úteis no dia-a-dia:</p>
+<pre><code><span class="c"># Status</span>
+docker compose ps
+
+<span class="c"># Parar</span>
+docker compose down
+
+<span class="c"># Parar e remover volumes (CUIDADO: apaga os dados)</span>
+docker compose down -v
+
+<span class="c"># Rebuild forçado (após mudar Dockerfile)</span>
+docker compose up -d --build --force-recreate
+
+<span class="c"># Entrar no container pra debugar</span>
+docker compose exec kastor sh
+ls /app/data
+node --version</code></pre>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<section id="dominio">
+<h2><span class="h2-num">08</span>Domínio e HTTPS <a href="#dominio" class="anchor">#</a></h2>
+
+<p>Recomendação: <strong>Nginx Proxy Manager (NPM)</strong> rodando como container irmão na mesma VPS. Ele cuida do certificado SSL via Let's Encrypt automaticamente.</p>
+
+<h3>Configuração no NPM</h3>
+<ol class="steps">
+  <li>
+    <strong>Hosts → Proxy Hosts → Add Proxy Host.</strong>
+  </li>
+  <li>
+    <strong>Domain Names</strong>: <code>kastor.seudominio.com</code> (apertar Enter pra confirmar o chip)
+  </li>
+  <li>
+    <strong>Scheme</strong>: <code>http</code> · <strong>Forward Hostname / IP</strong>:
+    <ul>
+      <li>Se o NPM e o Kastor estão na mesma rede Docker: <code>kastor</code> (nome do service)</li>
+      <li>Se estão em redes separadas: IP interno da VPS (ex.: <code>172.17.0.1</code>)</li>
+    </ul>
+  </li>
+  <li>
+    <strong>Forward Port</strong>: <code>8080</code> (= <code>HOST_PORT</code> que você definiu)
+  </li>
+  <li>
+    Marque <strong>Block Common Exploits</strong> e <strong>Websockets Support</strong> (não tem WS hoje, mas se um dia tiver, já tá pronto).
+  </li>
+  <li>
+    Aba <strong>SSL</strong>:
+    <ul>
+      <li><em>SSL Certificate</em>: <strong>Request a new SSL Certificate</strong></li>
+      <li>Marque <strong>Force SSL</strong> + <strong>HTTP/2 Support</strong> + <strong>HSTS Enabled</strong></li>
+      <li>Concorde com os termos do Let's Encrypt</li>
+    </ul>
+  </li>
+  <li>
+    Aba <strong>Advanced</strong>, cole:
+    <pre style="margin: 4px 0; font-size: 12px;"><code>proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+client_max_body_size 25M;</code></pre>
+    <small>O <code>X-Forwarded-Proto</code> garante que cookies marquem <code>Secure</code> sob HTTPS. O <code>client_max_body_size</code> permite uploads de até 25 MB (default Nginx é 1 MB e quebra envio de anexos).</small>
+  </li>
+  <li>
+    <strong>Save.</strong> Em ~30s o NPM emite o cert, e <code>https://kastor.seudominio.com</code> tá no ar.
+  </li>
+</ol>
+
+<div class="callout-warn callout">
+  <strong>Cookie sob HTTPS</strong>: depois de habilitar HTTPS, atualize o <code>PUBLIC_URL</code> nas env vars pra incluir <code>https://</code> e <strong>restarte o container</strong> pra que os links de email saiam corretos.
+</div>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<section id="migracao">
+<h2><span class="h2-num">09</span>Migrar dados de uma instalação existente <a href="#migracao" class="anchor">#</a></h2>
+
+<p>Se você já tem o Kastor rodando local (em <code>./data/kastor.db</code>) ou em outro servidor, dá pra trazer tudo:</p>
+
+<h3>Opção A — Antes do primeiro deploy</h3>
+<ol class="steps">
+  <li>
+    Copie a pasta <code>data/</code> da instalação antiga pra VPS (via <code>scp</code>, <code>rsync</code>, ou upload manual).
+    <pre style="margin: 4px 0; font-size: 12px;"><code>scp -r ./data user@vps:/tmp/kastor-import</code></pre>
+  </li>
+  <li>
+    Suba a stack uma vez vazia (vai criar o volume).
+    <pre style="margin: 4px 0; font-size: 12px;"><code>docker compose up -d</code></pre>
+  </li>
+  <li>
+    Pare o container (sem remover o volume).
+    <pre style="margin: 4px 0; font-size: 12px;"><code>docker compose stop</code></pre>
+  </li>
+  <li>
+    Copie os arquivos pro volume:
+    <pre style="margin: 4px 0; font-size: 12px;"><code>docker run --rm \
+  -v kastor_kastor_data:/dest \
+  -v /tmp/kastor-import:/src \
+  alpine sh -c "cp -a /src/. /dest/ && chown -R 1000:1000 /dest"</code></pre>
+  </li>
+  <li>
+    Suba de volta:
+    <pre style="margin: 4px 0; font-size: 12px;"><code>docker compose start</code></pre>
+  </li>
+</ol>
+
+<h3>Opção B — Importar via Portainer (sem CLI)</h3>
+<ol class="steps">
+  <li>Suba a stack uma vez (cria o volume vazio).</li>
+  <li>Portainer → Volumes → <code>kastor_kastor_data</code> → "Browse" — interface web pra subir/baixar arquivos do volume. Suba o <code>kastor.db</code> e a pasta <code>uploads/</code>.</li>
+  <li>Restart o container.</li>
+</ol>
+
+<div class="callout-warn callout">
+  <strong>Versão do schema</strong>: a migração automática do código roda no boot. Se o banco antigo é de uma versão muito velha (pre-SQLite), o código tenta migrar <code>db.json</code> pra <code>kastor.db</code> sozinho. Veja os logs de boot pra confirmar.
+</div>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<section id="backup">
+<h2><span class="h2-num">10</span>Backup e restore <a href="#backup" class="anchor">#</a></h2>
+
+<h3>Backup manual (script)</h3>
+<pre><code><span class="c"># Gera um tar.gz com todo o volume — rode no host onde o Docker tá</span>
+docker run --rm \
+  -v kastor_kastor_data:/data \
+  -v <span class="s">"$(pwd)"</span>:/backup \
+  alpine tar czf /backup/kastor-backup-<span class="f">$(date +%F)</span>.tar.gz -C /data .</code></pre>
+
+<p>Vai gerar <code>kastor-backup-2026-06-26.tar.gz</code> no diretório atual. Copie pra fora do servidor (S3, Backblaze, outra VPS).</p>
+
+<h3>Restore</h3>
+<pre><code><span class="c"># Container PARADO antes de restaurar</span>
+docker compose stop kastor
+
+docker run --rm \
+  -v kastor_kastor_data:/data \
+  -v <span class="s">"$(pwd)"</span>:/backup \
+  alpine sh -c <span class="s">"cd /data && rm -rf ./* && tar xzf /backup/kastor-backup-XXXX.tar.gz"</span>
+
+docker compose start kastor</code></pre>
+
+<h3>Backup automatizado (cron)</h3>
+
+<p>Adicione no <code>crontab -e</code> do host:</p>
+<pre><code><span class="c"># Backup diário às 03:00, mantém últimos 7</span>
+0 3 * * * cd /opt/backups/kastor && \
+  docker run --rm -v kastor_kastor_data:/data -v $(pwd):/backup alpine \
+    tar czf /backup/kastor-$(date +\%F).tar.gz -C /data . && \
+  ls -t kastor-*.tar.gz | tail -n +8 | xargs rm -f</code></pre>
+
+<div class="callout-success callout">
+  <strong>SQLite com WAL é seguro pra copiar a quente.</strong> O comando acima funciona com o container rodando, sem corromper o banco. Mas se for migrar entre máquinas, prefira parar primeiro.
+</div>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<section id="update">
+<h2><span class="h2-num">11</span>Atualizar a aplicação <a href="#update" class="anchor">#</a></h2>
+
+<h3>Via Portainer</h3>
+<ol class="steps">
+  <li>Faça <code>git push</code> da branch que a Stack acompanha (geralmente <code>main</code>).</li>
+  <li>Portainer → Stacks → <code>kastor</code> → <strong>Pull and redeploy</strong>.</li>
+  <li>Marque <strong>Re-pull image</strong> + <strong>Prune services</strong>.</li>
+  <li>Confirme. Portainer faz <code>git pull</code> + <code>docker compose up --build -d</code>. ~30s a 1min de downtime durante o restart.</li>
+</ol>
+
+<h3>Via CLI</h3>
+<pre><code><span class="k">cd</span> /caminho/da/stack
+git pull
+docker compose up -d --build</code></pre>
+
+<div class="callout">
+  <strong>O volume sobrevive</strong> a updates — banco, uploads e tokens ficam intactos. Migrações de schema rodam automaticamente no boot (ver logs).
+</div>
+
+<div class="callout-warn callout">
+  <strong>Antes de updates grandes</strong> (mudança de versão major), faça backup primeiro (<a href="#backup">§10</a>).
+</div>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<section id="logs">
+<h2><span class="h2-num">12</span>Logs e healthcheck <a href="#logs" class="anchor">#</a></h2>
+
+<h3>Ver logs</h3>
+<pre><code><span class="c"># Últimas 100 linhas, seguindo em tempo real</span>
+docker compose logs -f --tail 100 kastor
+
+<span class="c"># Pelo Portainer: Containers → kastor → Logs (botão na barra)</span></code></pre>
+
+<h3>O que esperar nos logs normais</h3>
+<pre><code><span class="c">› Importando data/db.json antigo para SQLite… 0 entidades migradas</span>
+<span class="c">› Usuário inicial — login: admin | senha: admin123 (altere no Perfil)</span>
+
+  fluxo. rodando em  →  http://localhost:3000</code></pre>
+
+<h3>Healthcheck</h3>
+<p>Docker pinga <code>GET /</code> a cada 30s. Verificar status:</p>
+<pre><code>docker inspect --format=<span class="s">'{{.State.Health.Status}}'</span> kastor
+<span class="c"># Esperado: "healthy"</span>
+
+docker inspect --format=<span class="s">'{{json .State.Health}}'</span> kastor | jq</code></pre>
+
+<p>Se ficar <code>unhealthy</code> por 3 checks consecutivos, o Docker marca como tal — útil pro NPM ou pro Watchtower ignorar até recuperar. Container <strong>não</strong> reinicia sozinho por isso a menos que <code>restart-policy</code> esteja configurada pra <code>on-failure</code>.</p>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<section id="troubleshooting">
+<h2><span class="h2-num">13</span>Troubleshooting <a href="#troubleshooting" class="anchor">#</a></h2>
+
+<h3>Container sobe mas a página não abre</h3>
+<ul>
+  <li>Confira que a porta <code>HOST_PORT</code> não está ocupada: <code>ss -tlnp | grep 8080</code></li>
+  <li>Acesse direto pelo IP+porta antes de envolver o domínio: <code>http://IP:8080</code></li>
+  <li>Veja os logs: <code>docker compose logs kastor</code> — erro de Node aparece aqui</li>
+</ul>
+
+<h3>"Erro de Node version"</h3>
+<p>Se ver mensagem sobre <code>node:sqlite</code> não existir, a imagem está usando Node < 22.5. Confira o <code>Dockerfile</code>: a primeira linha deve ser <code>FROM node:22-alpine</code> (ou superior).</p>
+
+<h3>Login funciona mas perde sessão a cada restart</h3>
+<p>O <code>FLUXO_SECRET</code> não está definido <em>e</em> o volume não tá persistindo. Sintomas:</p>
+<ul>
+  <li>Sessões expiram após restart do container</li>
+  <li>Arquivo <code>data/secret.bin</code> some entre boots</li>
+</ul>
+<p><strong>Fix</strong>: defina <code>FLUXO_SECRET</code> explicitamente nas env vars (<code>openssl rand -hex 32</code>) e confirme que o volume tá montado: <code>docker inspect kastor | grep -A 10 Mounts</code>.</p>
+
+<h3>Email de reset não chega</h3>
+<ul>
+  <li>Confirme que <code>SMTP_HOST</code>, <code>SMTP_USER</code> e <code>SMTP_PASS</code> estão definidos</li>
+  <li>Gmail/Google Workspace: precisa de <strong>App Password</strong>, não a senha normal</li>
+  <li>Logs mostram erros do nodemailer com o motivo (auth, conexão, etc)</li>
+  <li>Teste com algo simples: <code>SMTP_HOST=smtp.gmail.com</code>, <code>SMTP_PORT=587</code>, <code>SMTP_SECURE=false</code></li>
+</ul>
+
+<h3>Upload de arquivo grande dá erro 413</h3>
+<p>O Nginx Proxy Manager limita corpo a 1 MB por default. No Proxy Host → Advanced, adicione:</p>
+<pre><code><span class="k">client_max_body_size</span> 25M;</code></pre>
+
+<h3>"Cookie not sent over HTTPS"</h3>
+<p>Após habilitar HTTPS no NPM, o backend precisa saber que está atrás de um proxy. Já vem configurado, mas confira que o NPM está enviando:</p>
+<pre><code><span class="k">proxy_set_header</span> X-Forwarded-Proto $scheme;</code></pre>
+
+<h3>Banco corrompido</h3>
+<p>SQLite com WAL é robusto, mas em casos raros (kill -9, falta de espaço em disco) pode corromper. Restore o backup mais recente (<a href="#backup">§10</a>). Pra inspecionar:</p>
+<pre><code>docker compose exec kastor sh
+<span class="k">cd</span> /app/data
+sqlite3 kastor.db <span class="s">'PRAGMA integrity_check;'</span></code></pre>
+
+<h3>Onde fica o volume no host</h3>
+<pre><code>docker volume inspect kastor_kastor_data
+<span class="c"># Mostra o "Mountpoint", tipo /var/lib/docker/volumes/kastor_kastor_data/_data</span></code></pre>
+
+<p><strong>Não edite</strong> arquivos lá direto enquanto o container roda — use os comandos da §10.</p>
+</section>
+
+<!-- ──────────────────────────────────────────────────────────── -->
+<section id="seguranca">
+<h2><span class="h2-num">14</span>Checklist de segurança <a href="#seguranca" class="anchor">#</a></h2>
+
+<ul>
+  <li><strong>[ ]</strong> Troquei a senha do usuário <code>admin</code> no primeiro acesso</li>
+  <li><strong>[ ]</strong> Defini <code>FLUXO_SECRET</code> explicitamente e guardei em cofre de senhas</li>
+  <li><strong>[ ]</strong> HTTPS habilitado no NPM com Force SSL + HSTS</li>
+  <li><strong>[ ]</strong> <code>PUBLIC_URL</code> aponta pro domínio HTTPS (não pro IP nem HTTP)</li>
+  <li><strong>[ ]</strong> Backup automático configurado no cron + cópia off-site</li>
+  <li><strong>[ ]</strong> Firewall do host fechando a <code>HOST_PORT</code> pro mundo (só o NPM acessa)</li>
+  <li><strong>[ ]</strong> <code>.env</code> da VPS tem permissão <code>600</code> e dono <code>root</code></li>
+  <li><strong>[ ]</strong> SMTP usando App Password, não a senha real da conta</li>
+  <li><strong>[ ]</strong> Container roda como usuário não-root (Node Alpine já faz isso)</li>
+  <li><strong>[ ]</strong> Healthcheck retornando <code>healthy</code></li>
+  <li><strong>[ ]</strong> Webhooks de Discord/Slack só apontam pra canais privados da equipe</li>
+</ul>
+
+<div class="callout">
+  <strong>Atualização de segurança</strong>: <code>docker compose pull</code> + <code>up -d</code> a cada algumas semanas pra trazer patches do Node + Alpine base.
+</div>
+
+<hr>
+
+<p style="text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 60px;">
+  Kastor — Deploy Docker · Versão do documento alinhada com o repositório atual.
+  <br>
+  Para arquitetura interna, API e modelo de dados: <a href="README.html">README.html</a>.
+</p>
+
+</section>
+
+</main>
+</div>
+
+<button class="back-to-top" id="back-to-top" onclick="window.scrollTo({top:0, behavior:'smooth'})" aria-label="Voltar ao topo">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+</button>
+
+<script>
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  localStorage.setItem('kastor-docs-theme', t);
+  const isLight = t === 'light';
+  document.getElementById('theme-label').textContent = isLight ? 'Modo escuro' : 'Modo claro';
+  document.getElementById('theme-icon').innerHTML = isLight
+    ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>'
+    : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>';
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+}
+applyTheme(localStorage.getItem('kastor-docs-theme') || 'dark');
+
+const sections = document.querySelectorAll('section[id]');
+const tocLinks = document.querySelectorAll('#toc a');
+const tocById = {};
+tocLinks.forEach(a => { tocById[a.getAttribute('href').slice(1)] = a; });
+
+const obs = new IntersectionObserver((entries) => {
+  let active = null;
+  entries.forEach(e => { if (e.isIntersecting) active = e.target.id; });
+  if (!active) {
+    const mid = window.innerHeight * 0.3;
+    let best = null, bestDist = Infinity;
+    sections.forEach(s => {
+      const top = s.getBoundingClientRect().top;
+      if (top <= mid && mid - top < bestDist) { bestDist = mid - top; best = s.id; }
+    });
+    active = best;
+  }
+  if (active) {
+    tocLinks.forEach(a => a.classList.remove('active'));
+    if (tocById[active]) tocById[active].classList.add('active');
+  }
+}, { rootMargin: '-20% 0px -70% 0px', threshold: 0 });
+sections.forEach(s => obs.observe(s));
+
+tocLinks.forEach(a => {
+  a.addEventListener('click', () => { document.body.classList.remove('menu-open'); });
+});
+
+const backBtn = document.getElementById('back-to-top');
+window.addEventListener('scroll', () => {
+  if (window.scrollY > 400) backBtn.classList.add('show');
+  else backBtn.classList.remove('show');
+}, { passive: true });
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') document.body.classList.remove('menu-open');
+});
+</script>
+</body>
+</html>

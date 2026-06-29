@@ -19,6 +19,7 @@ let roles      = [];
 let templates  = [];
 let webhooks   = [];
 let schedules  = [];
+let clientTemplates = [];
 let notifPollTimer = null;
 
 let activeWs   = localStorage.getItem('fluxo_ws') || null;
@@ -232,6 +233,18 @@ const PRIORITIES = [
 ];
 function priorityLabel(v) { return (PRIORITIES.find(p => p.value === v) || PRIORITIES[2]).label; }
 function priorityColor(v) { return (PRIORITIES.find(p => p.value === v) || PRIORITIES[2]).color; }
+/* Célula compacta dos entregáveis pra tabelas: "P · A · V" com tooltip.
+   Se TODOS forem zero, mostra "—". */
+function qtyCell(d) {
+  const p = Number(d.qtyPieces) || 0;
+  const a = Number(d.qtyArts) || 0;
+  const v = Number(d.qtyVariations) || 0;
+  if (!p && !a && !v) return '<span class="qty-cell-empty">—</span>';
+  return `<span class="qty-cell-compact" title="${p} peça${p === 1 ? '' : 's'} · ${a} arte${a === 1 ? '' : 's'} · ${v} variaç${v === 1 ? 'ão' : 'ões'}">
+    <span class="qty-num">${p}</span><span class="qty-sep">·</span><span class="qty-num">${a}</span><span class="qty-sep">·</span><span class="qty-num">${v}</span>
+  </span>`;
+}
+
 function priorityPill(v) {
   const p = PRIORITIES.find(x => x.value === v) || PRIORITIES[2];
   return `<span class="pill" style="color:${p.color};background:${hexDim(p.color)};font-size:10px">${p.label}</span>`;
@@ -382,6 +395,27 @@ function presenceClassFor(u) {
 // pessoa ganha sua cor consistente, mantendo bom contraste com texto branco.
 // Memoizado: o resultado é puro do seed, e avatarHTML chama esta função em
 // todo render (lista, kanban, calendário, comentários) — cache evita rehash.
+/* Paleta curada de gradients — 16 combos elegantes que sempre ficam bons com
+   texto branco. Mais bonito que HSL random (que dava matches feios em verdes
+   doentios ou neons). Hash do seed → índice da paleta. */
+const AVATAR_GRADIENTS = [
+  'linear-gradient(135deg, #FF6B6B 0%, #C92A2A 100%)', // coral → vermelho
+  'linear-gradient(135deg, #F8A055 0%, #D14A1F 100%)', // laranja → tijolo
+  'linear-gradient(135deg, #FFB84D 0%, #B8860B 100%)', // âmbar
+  'linear-gradient(135deg, #FFD93D 0%, #E07B00 100%)', // amarelo → bronze
+  'linear-gradient(135deg, #8BC34A 0%, #2E7D32 100%)', // verde-claro → verde
+  'linear-gradient(135deg, #4ECDC4 0%, #1B9E96 100%)', // turquesa
+  'linear-gradient(135deg, #44BCD8 0%, #0277B6 100%)', // ciano → azul
+  'linear-gradient(135deg, #6FA8DC 0%, #1A5490 100%)', // azul-claro → marinho
+  'linear-gradient(135deg, #4A6FE3 0%, #2E3B8E 100%)', // royal blue
+  'linear-gradient(135deg, #7A6BE8 0%, #3F2DA5 100%)', // indigo
+  'linear-gradient(135deg, #9C6FE8 0%, #6128D7 100%)', // violeta → roxo
+  'linear-gradient(135deg, #C77DFF 0%, #7A00FF 100%)', // lavanda → brand
+  'linear-gradient(135deg, #E6A0E0 0%, #A93FA8 100%)', // rosa-claro → magenta
+  'linear-gradient(135deg, #F472B6 0%, #BE185D 100%)', // pink
+  'linear-gradient(135deg, #FB7185 0%, #9F1239 100%)', // rosé
+  'linear-gradient(135deg, #94A3B8 0%, #475569 100%)'  // slate (fallback neutro)
+];
 const _avatarGradientCache = new Map();
 function avatarGradient(seed) {
   const key = String(seed);
@@ -389,9 +423,7 @@ function avatarGradient(seed) {
   if (cached) return cached;
   let h = 0;
   for (let i = 0; i < key.length; i++) h = ((h << 5) - h + key.charCodeAt(i)) >>> 0;
-  const hue1 = h % 360;
-  const hue2 = (hue1 + 30 + (h >> 8) % 25) % 360;
-  const result = `linear-gradient(135deg, hsl(${hue1} 62% 50%), hsl(${hue2} 68% 42%))`;
+  const result = AVATAR_GRADIENTS[h % AVATAR_GRADIENTS.length];
   _avatarGradientCache.set(key, result);
   return result;
 }
@@ -545,62 +577,95 @@ function cellUser(u) {
   return `<span class="cell-user">${avatarHTML(u)} ${esc(u.name)}</span>`;
 }
 // ─── EMPTY STATES com ilustração line-art ───
+/* Empty states ilustrados — SVGs com viewBox 160×120, usando o accent (--accent)
+   e tons de surface pra dar profundidade. Cada ilustração tem uma "cena" leve
+   em vez de só um ícone monocromático. Variáveis CSS são interpoladas via
+   currentColor pra fallback e style="--accent" pra cor da marca. */
 const EMPTY_ICONS = {
-  default: `<svg viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="14" y="22" width="68" height="56" rx="6"/>
-    <path d="M14 38h68"/>
-    <circle cx="22" cy="30" r="1.5" fill="currentColor"/>
-    <circle cx="28" cy="30" r="1.5" fill="currentColor"/>
-    <path d="M30 52h36M30 60h24" opacity=".55"/>
+  default: `<svg viewBox="0 0 160 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="80" cy="108" rx="56" ry="6" fill="currentColor" opacity=".08"/>
+    <rect x="30" y="28" width="100" height="68" rx="8" fill="currentColor" opacity=".06" stroke="currentColor" stroke-opacity=".22" stroke-width="1.5"/>
+    <path d="M30 44h100" stroke="currentColor" stroke-opacity=".22" stroke-width="1.5"/>
+    <circle cx="40" cy="36" r="2" fill="var(--accent-text, #B380FF)"/>
+    <circle cx="48" cy="36" r="2" fill="currentColor" opacity=".35"/>
+    <circle cx="56" cy="36" r="2" fill="currentColor" opacity=".35"/>
+    <rect x="44" y="56" width="48" height="6" rx="3" fill="currentColor" opacity=".22"/>
+    <rect x="44" y="70" width="32" height="6" rx="3" fill="var(--accent-text, #B380FF)" opacity=".4"/>
+    <rect x="44" y="84" width="20" height="4" rx="2" fill="currentColor" opacity=".18"/>
   </svg>`,
-  inbox: `<svg viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M16 22h64l-8 32H24z"/>
-    <path d="M16 54v18a4 4 0 004 4h56a4 4 0 004-4V54"/>
-    <path d="M28 54h12a8 8 0 0016 0h12"/>
+  inbox: `<svg viewBox="0 0 160 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="80" cy="108" rx="56" ry="6" fill="currentColor" opacity=".08"/>
+    <path d="M36 50h88l-10 26H46z" fill="var(--accent-text, #B380FF)" opacity=".2"/>
+    <path d="M30 76v14a6 6 0 006 6h88a6 6 0 006-6V76" fill="currentColor" opacity=".06" stroke="currentColor" stroke-opacity=".25" stroke-width="1.5"/>
+    <path d="M30 76l8-26h84l8 26" stroke="currentColor" stroke-opacity=".25" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M46 76h12a14 14 0 0028 0h12" stroke="var(--accent-text, #B380FF)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <circle cx="80" cy="34" r="3" fill="var(--accent-text, #B380FF)" opacity=".5"/>
+    <circle cx="64" cy="28" r="2" fill="currentColor" opacity=".3"/>
+    <circle cx="96" cy="28" r="2" fill="currentColor" opacity=".3"/>
   </svg>`,
-  search: `<svg viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="42" cy="42" r="22"/>
-    <path d="M58 58l16 16"/>
-    <path d="M34 42h16M42 34v16" opacity=".4"/>
+  search: `<svg viewBox="0 0 160 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="80" cy="108" rx="56" ry="6" fill="currentColor" opacity=".08"/>
+    <circle cx="68" cy="56" r="28" fill="var(--accent-text, #B380FF)" opacity=".10"/>
+    <circle cx="68" cy="56" r="28" stroke="currentColor" stroke-opacity=".3" stroke-width="2"/>
+    <path d="M90 78l18 18" stroke="var(--accent-text, #B380FF)" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M58 50h20M68 40v20" stroke="currentColor" stroke-opacity=".45" stroke-width="1.5" stroke-linecap="round"/>
   </svg>`,
-  calendar: `<svg viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="14" y="22" width="68" height="60" rx="6"/>
-    <path d="M14 38h68"/>
-    <path d="M30 14v14M66 14v14"/>
-    <circle cx="32" cy="52" r="2" fill="currentColor"/>
-    <circle cx="48" cy="52" r="2" fill="currentColor"/>
-    <circle cx="64" cy="52" r="2" fill="currentColor"/>
-    <circle cx="32" cy="66" r="2" fill="currentColor" opacity=".5"/>
-    <circle cx="48" cy="66" r="2" fill="currentColor" opacity=".5"/>
+  calendar: `<svg viewBox="0 0 160 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="80" cy="110" rx="56" ry="6" fill="currentColor" opacity=".08"/>
+    <rect x="32" y="28" width="96" height="74" rx="8" fill="currentColor" opacity=".06" stroke="currentColor" stroke-opacity=".25" stroke-width="1.5"/>
+    <path d="M32 48h96" stroke="currentColor" stroke-opacity=".3" stroke-width="1.5"/>
+    <path d="M52 20v14M108 20v14" stroke="currentColor" stroke-opacity=".5" stroke-width="2.5" stroke-linecap="round"/>
+    <rect x="42" y="58" width="14" height="10" rx="2" fill="currentColor" opacity=".18"/>
+    <rect x="60" y="58" width="14" height="10" rx="2" fill="var(--accent-text, #B380FF)" opacity=".5"/>
+    <rect x="78" y="58" width="14" height="10" rx="2" fill="currentColor" opacity=".18"/>
+    <rect x="96" y="58" width="14" height="10" rx="2" fill="currentColor" opacity=".18"/>
+    <rect x="42" y="74" width="14" height="10" rx="2" fill="currentColor" opacity=".12"/>
+    <rect x="60" y="74" width="14" height="10" rx="2" fill="currentColor" opacity=".12"/>
+    <rect x="78" y="74" width="14" height="10" rx="2" fill="currentColor" opacity=".12"/>
   </svg>`,
-  comments: `<svg viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M16 28a6 6 0 016-6h44a6 6 0 016 6v26a6 6 0 01-6 6H40l-14 12V60h-4a6 6 0 01-6-6z"/>
-    <path d="M30 38h28M30 46h20" opacity=".55"/>
+  comments: `<svg viewBox="0 0 160 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="80" cy="108" rx="56" ry="6" fill="currentColor" opacity=".08"/>
+    <path d="M30 38a8 8 0 018-8h68a8 8 0 018 8v32a8 8 0 01-8 8H62l-14 12V78h-10a8 8 0 01-8-8z" fill="currentColor" opacity=".06" stroke="currentColor" stroke-opacity=".25" stroke-width="1.5"/>
+    <rect x="44" y="46" width="50" height="5" rx="2.5" fill="var(--accent-text, #B380FF)" opacity=".55"/>
+    <rect x="44" y="56" width="34" height="5" rx="2.5" fill="currentColor" opacity=".22"/>
+    <circle cx="106" cy="36" r="6" fill="var(--accent-text, #B380FF)" opacity=".7"/>
+    <text x="106" y="40" font-size="8" font-weight="700" fill="#fff" text-anchor="middle" font-family="system-ui">1</text>
   </svg>`,
-  users: `<svg viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="38" cy="36" r="12"/>
-    <path d="M16 76c2-12 11-18 22-18s20 6 22 18"/>
-    <circle cx="68" cy="32" r="8" opacity=".55"/>
-    <path d="M62 50c10 1 16 7 18 16" opacity=".55"/>
+  users: `<svg viewBox="0 0 160 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="80" cy="108" rx="56" ry="6" fill="currentColor" opacity=".10"/>
+    <circle cx="62" cy="52" r="14" fill="var(--accent-text, #B380FF)" fill-opacity=".55"/>
+    <circle cx="62" cy="52" r="14" stroke="var(--accent-text, #B380FF)" stroke-opacity=".7" stroke-width="1.5"/>
+    <path d="M38 96c4-14 12-20 24-20s20 6 24 20" fill="var(--accent-text, #B380FF)" fill-opacity=".25" stroke="var(--accent-text, #B380FF)" stroke-opacity=".55" stroke-width="1.5" stroke-linejoin="round"/>
+    <circle cx="104" cy="50" r="10" fill="currentColor" fill-opacity=".18"/>
+    <circle cx="104" cy="50" r="10" stroke="currentColor" stroke-opacity=".5" stroke-width="1.5"/>
+    <path d="M92 84c2-9 8-14 16-14s14 5 18 14" fill="currentColor" fill-opacity=".08" stroke="currentColor" stroke-opacity=".4" stroke-width="1.5" stroke-linejoin="round"/>
   </svg>`,
-  flow: `<svg viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="20" cy="48" r="6"/>
-    <circle cx="48" cy="22" r="6"/>
-    <circle cx="48" cy="74" r="6"/>
-    <circle cx="76" cy="48" r="6"/>
-    <path d="M26 46l16-20M26 50l16 20M54 22h2c10 0 20 6 20 26M54 74h2c10 0 20-6 20-26"/>
+  flow: `<svg viewBox="0 0 160 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="80" cy="108" rx="56" ry="6" fill="currentColor" opacity=".08"/>
+    <path d="M48 60h28l16-30M48 60h28l16 30" stroke="currentColor" stroke-opacity=".35" stroke-width="2" stroke-linecap="round" fill="none"/>
+    <path d="M104 60h22" stroke="var(--accent-text, #B380FF)" stroke-width="2" stroke-linecap="round" stroke-dasharray="3 4"/>
+    <circle cx="40" cy="60" r="10" fill="var(--accent-text, #B380FF)" opacity=".7"/>
+    <circle cx="96" cy="30" r="9" fill="currentColor" opacity=".18" stroke="currentColor" stroke-opacity=".35" stroke-width="1.5"/>
+    <circle cx="96" cy="90" r="9" fill="currentColor" opacity=".18" stroke="currentColor" stroke-opacity=".35" stroke-width="1.5"/>
+    <circle cx="132" cy="60" r="10" fill="currentColor" opacity=".18" stroke="currentColor" stroke-opacity=".4" stroke-width="1.5"/>
   </svg>`,
-  webhook: `<svg viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="48" cy="32" r="10"/>
-    <circle cx="28" cy="64" r="10"/>
-    <circle cx="68" cy="64" r="10"/>
-    <path d="M44 40l-12 16M52 40l12 16M36 64h24"/>
+  webhook: `<svg viewBox="0 0 160 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="80" cy="108" rx="56" ry="6" fill="currentColor" opacity=".08"/>
+    <circle cx="80" cy="38" r="14" fill="var(--accent-text, #B380FF)" opacity=".25" stroke="var(--accent-text, #B380FF)" stroke-opacity=".7" stroke-width="1.5"/>
+    <circle cx="46" cy="82" r="14" fill="currentColor" opacity=".10" stroke="currentColor" stroke-opacity=".35" stroke-width="1.5"/>
+    <circle cx="114" cy="82" r="14" fill="currentColor" opacity=".10" stroke="currentColor" stroke-opacity=".35" stroke-width="1.5"/>
+    <path d="M73 50l-18 20M87 50l18 20M58 82h44" stroke="currentColor" stroke-opacity=".4" stroke-width="2" stroke-linecap="round"/>
   </svg>`,
-  kanban: `<svg viewBox="0 0 96 96" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="14" y="18" width="20" height="60" rx="4"/>
-    <rect x="38" y="18" width="20" height="42" rx="4"/>
-    <rect x="62" y="18" width="20" height="52" rx="4"/>
-    <path d="M20 28h8M20 38h6M44 28h8M68 28h8M68 38h8" opacity=".55"/>
+  kanban: `<svg viewBox="0 0 160 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="80" cy="110" rx="56" ry="6" fill="currentColor" opacity=".08"/>
+    <rect x="22" y="22" width="36" height="78" rx="6" fill="currentColor" opacity=".06" stroke="currentColor" stroke-opacity=".25" stroke-width="1.5"/>
+    <rect x="62" y="22" width="36" height="58" rx="6" fill="currentColor" opacity=".06" stroke="currentColor" stroke-opacity=".25" stroke-width="1.5"/>
+    <rect x="102" y="22" width="36" height="68" rx="6" fill="currentColor" opacity=".06" stroke="currentColor" stroke-opacity=".25" stroke-width="1.5"/>
+    <rect x="28" y="32" width="24" height="8" rx="2" fill="var(--accent-text, #B380FF)" opacity=".55"/>
+    <rect x="28" y="46" width="24" height="8" rx="2" fill="currentColor" opacity=".18"/>
+    <rect x="68" y="32" width="24" height="8" rx="2" fill="currentColor" opacity=".18"/>
+    <rect x="108" y="32" width="24" height="8" rx="2" fill="currentColor" opacity=".18"/>
+    <rect x="108" y="46" width="24" height="8" rx="2" fill="var(--accent-text, #B380FF)" opacity=".4"/>
   </svg>`,
 };
 function emptyState(title, sub, iconName) {
@@ -625,6 +690,82 @@ function skeletonTableRows(cols = 7, rows = 6) {
   return Array.from({length: rows}, (_, i) => `
     <tr><td colspan="${cols}"><div class="skeleton skeleton-line" style="width:${50 + ((i * 13) % 40)}%;margin:0"></div></td></tr>
   `).join('');
+}
+
+/* ─── HOVER TOOLTIP PARA GRÁFICOS DE LINHA ──────────────────────
+   Genérico: recebe um host (com SVG dentro, preserveAspectRatio="none"
+   recomendado) e config com pontos no sistema de coordenadas do viewBox.
+   Mostra: tooltip flutuante + linha-guia vertical + ponto destacado.
+
+   config = {
+     viewBox:  { w, h, padL, padR, padT, innerH },
+     points:   [ { x, label, series: [{ y, value, color }] } ],
+     lineEls:  HTMLElement (guide line dentro do SVG) — opcional
+     markerEls:[HTMLElement] (1 por série, dentro do SVG) — opcional
+     tooltipEl:HTMLElement absoluta dentro do host
+     format:   (val, seriesIdx) => string
+   } */
+function attachChartHover(host, config) {
+  if (!host || !config.points || !config.points.length) return;
+  const tip = config.tooltipEl;
+  const guide = config.lineEls;
+  const markers = config.markerEls || [];
+  const { w: vbW, h: vbH, padT, innerH } = config.viewBox;
+  let lastIdx = -1;
+
+  const onMove = (e) => {
+    const rect = host.getBoundingClientRect();
+    if (!rect.width) return;
+    const localX = e.clientX - rect.left;
+    const svgX = localX * vbW / rect.width;
+    // Acha o ponto mais próximo
+    let best = 0, bestDist = Infinity;
+    for (let i = 0; i < config.points.length; i++) {
+      const d = Math.abs(config.points[i].x - svgX);
+      if (d < bestDist) { bestDist = d; best = i; }
+    }
+    if (best === lastIdx) return;
+    lastIdx = best;
+    const p = config.points[best];
+    // Posiciona guide line + markers (em SVG coords)
+    if (guide) {
+      guide.setAttribute('x1', p.x);
+      guide.setAttribute('x2', p.x);
+      guide.style.opacity = '1';
+    }
+    p.series.forEach((s, i) => {
+      const m = markers[i];
+      if (!m) return;
+      m.setAttribute('cx', p.x);
+      m.setAttribute('cy', s.y);
+      m.style.opacity = '1';
+    });
+    // Posiciona tooltip (em pixel coords do host)
+    if (tip) {
+      const lines = p.series.map((s, i) => {
+        const sw = s.color ? `<span class="chart-tip-dot" style="background:${s.color}"></span>` : '';
+        return `<div class="chart-tip-row">${sw}<span class="chart-tip-label">${esc(s.name || '')}</span><span class="chart-tip-value">${esc(config.format(s.value, i))}</span></div>`;
+      }).join('');
+      tip.innerHTML = `<div class="chart-tip-head">${esc(p.label)}</div>${lines}`;
+      const tipX = p.x * rect.width / vbW;
+      // Limita pra não vazar o host
+      const tipW = tip.offsetWidth || 140;
+      let left = tipX + 10;
+      if (left + tipW > rect.width - 8) left = tipX - tipW - 10;
+      if (left < 4) left = 4;
+      tip.style.left = left + 'px';
+      tip.style.top = '8px';
+      tip.style.opacity = '1';
+    }
+  };
+  const onLeave = () => {
+    lastIdx = -1;
+    if (tip) tip.style.opacity = '0';
+    if (guide) guide.style.opacity = '0';
+    markers.forEach(m => m && (m.style.opacity = '0'));
+  };
+  host.addEventListener('mousemove', onMove);
+  host.addEventListener('mouseleave', onLeave);
 }
 
 // ─── SPARKLINE (mini SVG line chart) ───
@@ -1379,12 +1520,30 @@ function showConfirm(opts) {
     okLabel: 'Confirmar',
     cancelLabel: 'Cancelar',
     danger: false,
+    kind: null, // 'danger' | 'warn' | 'info' | 'success' (auto: danger => 'danger')
   }, opts || {});
   $('confirm-title').textContent = o.title;
   $('confirm-message').innerHTML = o.message;
   const okBtn = $('confirm-ok-btn');
   okBtn.textContent = o.okLabel;
   okBtn.className = 'btn ' + (o.danger ? 'btn-danger' : 'btn-primary');
+  // Ícone tematizado: injeta antes da mensagem se ainda não existe
+  const kind = o.kind || (o.danger ? 'danger' : 'info');
+  const ICONS = {
+    danger: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+    warn:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+    info:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+    success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>'
+  };
+  const body = document.querySelector('#confirm-modal .modal-body');
+  if (body) {
+    let icon = body.querySelector('.confirm-icon');
+    if (icon) icon.remove();
+    icon = document.createElement('div');
+    icon.className = 'confirm-icon is-' + kind;
+    icon.innerHTML = ICONS[kind] || ICONS.info;
+    body.insertBefore(icon, body.firstChild);
+  }
   okBtn.focus();
   document.querySelector('#confirm-modal .modal-title').parentElement.parentElement
     .classList.toggle('modal-danger', !!o.danger);
@@ -1683,6 +1842,7 @@ async function enterApp() {
   }
   await fetchNotifications();
   startNotifPoll();
+  startRealtimeSync(); // SSE — substitui polling agressivo de dados
   paintIcons();
 }
 
@@ -1691,9 +1851,10 @@ async function loadAll() {
     api('/workspaces'), api('/users'), api('/clients'), api('/projects'),
     api('/flows'), api('/demands'), api('/roles'), api('/templates'),
     api('/webhooks').catch(() => []),
-    api('/schedules').catch(() => [])
+    api('/schedules').catch(() => []),
+    api('/client-templates').catch(() => [])
   ]);
-  [workspaces, users, clients, projects, flows, demands, roles, templates, webhooks, schedules] = results;
+  [workspaces, users, clients, projects, flows, demands, roles, templates, webhooks, schedules, clientTemplates] = results;
   const allowed = workspaces.map(w => w.id);
   if (!activeWs || !allowed.includes(activeWs)) activeWs = allowed[0] || null;
   localStorage.setItem('fluxo_ws', activeWs || '');
@@ -2138,12 +2299,41 @@ function renderDashChart(list) {
     <text x="${pad.l - 10}" y="${yAt(v) + 4}" fill="var(--text-muted)" font-size="11" text-anchor="end">${v}</text>
   `).join('');
 
+  // Marcadores e guide pra tooltip — invisíveis até o hover
+  const markerEls = visible.map((l, i) =>
+    `<circle id="dash-mk-${i}" r="5" fill="${l.color}" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke" style="opacity:0;pointer-events:none"/>`
+  ).join('');
+  const guideEl = `<line id="dash-guide" class="chart-guide" x1="0" y1="${pad.t}" x2="0" y2="${pad.t + innerH}" stroke="rgba(255,255,255,0.35)" stroke-width="1" vector-effect="non-scaling-stroke" style="opacity:0;pointer-events:none"/>`;
+
   $('dash-chart').innerHTML = `
-    <svg viewBox="0 0 ${w} ${h}" class="dash-chart-svg" preserveAspectRatio="xMidYMid meet">
-      ${yEls}
-      ${pathParts}
-      ${xLabels}
-    </svg>`;
+    <div class="chart-hover-host" id="dash-chart-host" style="position:relative">
+      <svg viewBox="0 0 ${w} ${h}" class="dash-chart-svg" preserveAspectRatio="none">
+        ${yEls}
+        ${pathParts}
+        ${xLabels}
+        ${guideEl}
+        ${markerEls}
+      </svg>
+      <div class="chart-tooltip" id="dash-chart-tooltip"></div>
+    </div>`;
+
+  // Wire hover — pra cada bucket, monta uma "série" com (y, value, color) por linha visível
+  const tipPoints = buckets.map((b, i) => ({
+    x: xAt(i),
+    label: b.date.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }),
+    series: visible.map(l => ({ name: l.label, value: b[l.key], y: yAt(b[l.key]), color: l.color }))
+  }));
+  const host = $('dash-chart-host');
+  if (host) {
+    attachChartHover(host, {
+      viewBox: { w, h, padL: pad.l, padR: pad.r, padT: pad.t, innerH },
+      points: tipPoints,
+      lineEls: $('dash-guide'),
+      markerEls: visible.map((_, i) => $('dash-mk-' + i)),
+      tooltipEl: $('dash-chart-tooltip'),
+      format: (v) => String(v)
+    });
+  }
 }
 
 /* Quadro de apontamento de horas */
@@ -2270,6 +2460,7 @@ function renderList() {
     else if (sortKey === 'owner')     { va = norm(userById(a.ownerId)?.name || ''); vb = norm(userById(b.ownerId)?.name || ''); }
     else if (sortKey === 'completed') { va = a.completedAt || '9999'; vb = b.completedAt || '9999'; }
     else if (sortKey === 'priority')  { va = a.priority || 3; vb = b.priority || 3; }
+    else if (sortKey === 'qty')       { va = (a.qtyArts || 0); vb = (b.qtyArts || 0); }
     else                              { va = effDue(a) || '9999'; vb = effDue(b) || '9999'; }
     return (va < vb ? -1 : va > vb ? 1 : 0) * (sortAsc ? 1 : -1);
   });
@@ -2285,7 +2476,7 @@ function renderList() {
   }
 
   if (!list.length) {
-    $('list-table-body').innerHTML = `<tr><td colspan="10">${emptyState('Nenhuma demanda encontrada', 'Ajuste a busca ou os filtros para encontrar o que procura.', 'search')}</td></tr>`;
+    $('list-table-body').innerHTML = `<tr><td colspan="11">${emptyState('Nenhuma demanda encontrada', 'Ajuste a busca ou os filtros para encontrar o que procura.', 'search')}</td></tr>`;
     if (listView === 'kanban') renderKanban();
     if (listView === 'cal') renderCalendar('all');
     refreshBulkBar();
@@ -2306,6 +2497,7 @@ function renderList() {
       <td>${cellUser(userById(d.ownerId))}</td>
       <td class="${isLate(d) ? 'deadline-late' : ''}">${fmtDate(due)}${isLate(d) ? ' <i data-lucide="alert-triangle" class="ic-sm"></i>' : ''}</td>
       <td>${priorityPill(d.priority)}</td>
+      <td>${qtyCell(d)}</td>
       <td>${d.completedAt ? fmtDate(d.completedAt) : '—'}</td>
     </tr>`;
   }).join('');
@@ -2717,9 +2909,10 @@ function renderMine() {
       <td><span class="demand-name">${esc(d.name)}</span></td>
       <td>${esc(projectById(d.projectId)?.name || '—')}</td>
       <td>${statusPill(d)}</td>
+      <td>${qtyCell(d)}</td>
       <td class="${isLate(d) ? 'deadline-late' : ''}">${fmtDate(effDue(d))}</td>
     </tr>`).join('')
-    : `<tr><td colspan="4">${emptyState('Nenhuma demanda encontrada', 'Você não tem demandas neste filtro.', 'inbox')}</td></tr>`;
+    : `<tr><td colspan="5">${emptyState('Nenhuma demanda encontrada', 'Você não tem demandas neste filtro.', 'inbox')}</td></tr>`;
   // Calendário e Agenda embed ficam sempre visíveis abaixo da tabela em
   // "Minhas Demandas". Re-render junto pra refletir mudanças imediato.
   if ($('cal-mine-body')) renderCalendar('mine');
@@ -2814,6 +3007,17 @@ function renderCapacityTeam(startYmd, endYmd, businessDays, capacityHours, logSt
     const when = ((e.start || e.createdAt || '') + '').slice(0,10);
     return when >= logStartYmd && when <= logEndYmd;
   };
+  // Janela de "entregas": considera a demanda no período se:
+  //   - foi CONCLUÍDA dentro da janela (completedAt no período)
+  //   - OU está EM ABERTO e atribuída ao usuário (em produção agora)
+  // Isso evita que o "0 0 0" apareça enquanto a demanda ainda está em execução.
+  const deliveredInWindow = (d) => {
+    if (d.completedAt) {
+      const day = String(d.completedAt).slice(0, 10);
+      return day >= logStartYmd && day <= logEndYmd;
+    }
+    return !isDone(d); // em aberto = conta como volume previsto
+  };
 
   const rows = wsusers.map(u => {
     const userDemands = wsdemands.filter(d => d.ownerId === u.id);
@@ -2828,11 +3032,17 @@ function renderCapacityTeam(startYmd, endYmd, businessDays, capacityHours, logSt
         .filter(e => e.userId === u.id && inLookback(e))
         .reduce((a, e) => a + (Number(e.hours) || 0), 0);
     }, 0);
+    // Entregáveis: soma das 3 contagens em demandas DESTE usuário (concluídas no período OU ativas).
+    // Usa deliverableUserId (quem executou as artes) como prioridade; se vazio, cai pro ownerId atual.
+    const deliveredDemands = wsDemands().filter(d => (d.deliverableUserId || d.ownerId) === u.id && deliveredInWindow(d));
+    const totalPieces     = deliveredDemands.reduce((s, d) => s + (Number(d.qtyPieces) || 0), 0);
+    const totalArts       = deliveredDemands.reduce((s, d) => s + (Number(d.qtyArts) || 0), 0);
+    const totalVariations = deliveredDemands.reduce((s, d) => s + (Number(d.qtyVariations) || 0), 0);
     const estimatedLoad = userDemands.reduce((s, d) => s + (Number(d.estimatedHours) > 0 ? Number(d.estimatedHours) : 4), 0);
     // Preenchimento da barra: horas apontadas no período / capacidade do período
     const pct = capacityHours > 0 ? Math.min(150, Math.round(hoursLogged / capacityHours * 100)) : 0;
     const status = pct >= 100 ? 'overload' : pct >= 75 ? 'high' : pct >= 40 ? 'medium' : 'low';
-    return { u, userDemands, inPeriod, lateCount, hoursLogged, estimatedLoad, pct, status };
+    return { u, userDemands, inPeriod, lateCount, hoursLogged, totalPieces, totalArts, totalVariations, estimatedLoad, pct, status };
   }).sort((a, b) => {
     // 1º critério: horas apontadas (decrescente) — quem mais trabalhou no topo
     if (b.hoursLogged !== a.hoursLogged) return b.hoursLogged - a.hoursLogged;
@@ -2840,11 +3050,30 @@ function renderCapacityTeam(startYmd, endYmd, businessDays, capacityHours, logSt
     return norm(a.u.name).localeCompare(norm(b.u.name));
   });
 
+  // Totais do workspace (somatório de todas as rows) — visão global de produção
+  const wsTotal = rows.reduce((acc, r) => ({
+    pieces: acc.pieces + r.totalPieces,
+    arts: acc.arts + r.totalArts,
+    variations: acc.variations + r.totalVariations,
+    hours: acc.hours + r.hoursLogged
+  }), { pieces: 0, arts: 0, variations: 0, hours: 0 });
+
   $('capacity-list').innerHTML = `
     <div class="capacity-summary">
       <div class="capacity-summary-item"><div class="capacity-summary-label">Capacidade no período</div><div class="capacity-summary-value">${capacityHours}h</div><div class="capacity-summary-sub">${businessDays} dias úteis × 8h</div></div>
       <div class="capacity-summary-item"><div class="capacity-summary-label">Demandas em aberto</div><div class="capacity-summary-value">${wsdemands.length}</div><div class="capacity-summary-sub">no workspace ${esc(wsById(activeWs)?.name || '')}</div></div>
       <div class="capacity-summary-item"><div class="capacity-summary-label">Pessoas ativas</div><div class="capacity-summary-value">${wsusers.length}</div><div class="capacity-summary-sub">com acesso ao workspace</div></div>
+    </div>
+    <!-- Banner de produção total — soma de todas as pessoas no período -->
+    <div class="capacity-prod-banner">
+      <div class="capacity-prod-title">Produção do workspace no período</div>
+      <div class="capacity-prod-stats">
+        <div class="capacity-prod-stat"><span class="capacity-prod-value">${fmtHours(wsTotal.hours)}</span><span class="capacity-prod-label">horas apontadas</span></div>
+        <div class="capacity-prod-divider"></div>
+        <div class="capacity-prod-stat"><span class="capacity-prod-value">${wsTotal.pieces}</span><span class="capacity-prod-label">peças únicas</span></div>
+        <div class="capacity-prod-stat"><span class="capacity-prod-value">${wsTotal.arts}</span><span class="capacity-prod-label">artes individuais</span></div>
+        <div class="capacity-prod-stat"><span class="capacity-prod-value">${wsTotal.variations}</span><span class="capacity-prod-label">variações</span></div>
+      </div>
     </div>
     <div class="capacity-rows">
     ${rows.map(r => `
@@ -2861,6 +3090,10 @@ function renderCapacityTeam(startYmd, endYmd, businessDays, capacityHours, logSt
           <div class="capacity-stat"><span class="capacity-stat-value">${r.inPeriod.length}</span><span class="capacity-stat-label">no período</span></div>
           <div class="capacity-stat ${r.lateCount > 0 ? 'late' : ''}"><span class="capacity-stat-value">${r.lateCount}</span><span class="capacity-stat-label">atrasadas</span></div>
           <div class="capacity-stat"><span class="capacity-stat-value">${fmtHours(r.hoursLogged)}</span><span class="capacity-stat-label">apontadas</span></div>
+          <div class="capacity-stat-divider"></div>
+          <div class="capacity-stat" title="Peças únicas entregues no período"><span class="capacity-stat-value">${r.totalPieces}</span><span class="capacity-stat-label">peças</span></div>
+          <div class="capacity-stat" title="Artes individuais entregues no período"><span class="capacity-stat-value">${r.totalArts}</span><span class="capacity-stat-label">artes</span></div>
+          <div class="capacity-stat" title="Variações/exportações entregues no período"><span class="capacity-stat-value">${r.totalVariations}</span><span class="capacity-stat-label">variações</span></div>
         </div>
         <div class="capacity-bar-wrap">
           <div class="capacity-bar-track">
@@ -2920,7 +3153,8 @@ function renderCapacityAggregate(kind, startYmd, endYmd, businessDays, capacityH
     }
     const cur = groups.get(key) || {
       key, label, sub, projects, color: proj?.color || '#7A00FF',
-      hours: 0, demands: new Set(), users: new Set(), entries: 0
+      hours: 0, demands: new Set(), users: new Set(), entries: 0,
+      pieces: 0, arts: 0, variations: 0
     };
     cur.hours += Number(e.hours) || 0;
     cur.demands.add(d.id);
@@ -2928,6 +3162,30 @@ function renderCapacityAggregate(kind, startYmd, endYmd, businessDays, capacityH
     cur.entries++;
     if (kind === 'client') cur.projects = projects;
     groups.set(key, cur);
+  });
+
+  // Segundo loop: soma entregáveis (peças/artes/variações) por grupo.
+  // Critério = demanda concluída no período OU em aberto (mesma regra da Equipe).
+  // Itera UMA vez por demanda (evita dupla-contagem que viria de iterar por entries).
+  const isInWindow = (d) => {
+    if (d.completedAt) {
+      const day = String(d.completedAt).slice(0, 10);
+      return day >= backStartYmd && day <= todayYmd;
+    }
+    return !isDone(d);
+  };
+  wsdemands.forEach(d => {
+    if (!isInWindow(d)) return;
+    if (!(d.qtyPieces || d.qtyArts || d.qtyVariations)) return;
+    const proj = projectById(d.projectId);
+    let key;
+    if (kind === 'project') key = proj?.id || '__none__';
+    else key = (proj?.client || '__none__').toLowerCase();
+    const g = groups.get(key);
+    if (!g) return; // grupo só existe se houver apontamentos — sem horas, sem linha
+    g.pieces += Number(d.qtyPieces) || 0;
+    g.arts += Number(d.qtyArts) || 0;
+    g.variations += Number(d.qtyVariations) || 0;
   });
 
   const rows = [...groups.values()].sort((a, b) => b.hours - a.hours);
@@ -2968,6 +3226,10 @@ function renderCapacityAggregate(kind, startYmd, endYmd, businessDays, capacityH
           <div class="capacity-stat"><span class="capacity-stat-value">${r.demands.size}</span><span class="capacity-stat-label">demanda${r.demands.size === 1 ? '' : 's'}</span></div>
           <div class="capacity-stat"><span class="capacity-stat-value">${r.users.size}</span><span class="capacity-stat-label">pessoa${r.users.size === 1 ? '' : 's'}</span></div>
           <div class="capacity-stat"><span class="capacity-stat-value">${r.entries}</span><span class="capacity-stat-label">apontamento${r.entries === 1 ? '' : 's'}</span></div>
+          <div class="capacity-stat-divider"></div>
+          <div class="capacity-stat" title="Peças únicas entregues no período"><span class="capacity-stat-value">${r.pieces}</span><span class="capacity-stat-label">peças</span></div>
+          <div class="capacity-stat" title="Artes individuais entregues no período"><span class="capacity-stat-value">${r.arts}</span><span class="capacity-stat-label">artes</span></div>
+          <div class="capacity-stat" title="Variações/exportações entregues no período"><span class="capacity-stat-value">${r.variations}</span><span class="capacity-stat-label">variações</span></div>
         </div>
         <div class="capacity-bar-wrap">
           <div class="capacity-bar-track">
@@ -3122,6 +3384,9 @@ function openNewDemand() {
   $('f-name').value = ''; $('f-description').value = '';
   $('f-briefing').value = ''; $('f-deadline').value = '';
   $('f-estimated').value = ''; $('f-priority').value = '3';
+  $('f-qty-pieces').value = ''; $('f-qty-arts').value = ''; $('f-qty-variations').value = '';
+  // Popula select de "Atribuir entregáveis a"
+  fillDeliverableUserSelect('f-deliverable-user', null);
   $('f-rec-enabled').checked = false; $('f-rec-config').style.display = 'none';
   $('f-rec-pattern').value = 'weekly'; $('f-rec-weekday').value = '1'; $('f-rec-end').value = '';
   $('f-project').value = '';
@@ -3151,6 +3416,10 @@ function openEditDemand(id) {
   $('f-deadline').value = d.deadline || '';
   $('f-estimated').value = d.estimatedHours || '';
   $('f-priority').value = d.priority || 3;
+  $('f-qty-pieces').value = d.qtyPieces || '';
+  $('f-qty-arts').value = d.qtyArts || '';
+  $('f-qty-variations').value = d.qtyVariations || '';
+  fillDeliverableUserSelect('f-deliverable-user', d.deliverableUserId || '');
   // Recurrence
   const rec = d.recurrence;
   $('f-rec-enabled').checked = !!(rec && rec.enabled);
@@ -3175,6 +3444,12 @@ function openEditDemand(id) {
 }
 async function saveDemand() {
   const recEnabled = $('f-rec-enabled').checked;
+  // Lê valores brutos pra log diagnóstico — se algum vier "" ou NaN sabemos por aí
+  const _rawQty = {
+    p: $('f-qty-pieces')?.value,
+    a: $('f-qty-arts')?.value,
+    v: $('f-qty-variations')?.value
+  };
   const payload = {
     name: $('f-name').value,
     description: $('f-description').value,
@@ -3184,6 +3459,10 @@ async function saveDemand() {
     deadline: $('f-deadline').value || null,
     estimatedHours: $('f-estimated').value ? Number($('f-estimated').value) : null,
     priority: Number($('f-priority').value) || 3,
+    qtyPieces: Number($('f-qty-pieces').value) || 0,
+    qtyArts: Number($('f-qty-arts').value) || 0,
+    qtyVariations: Number($('f-qty-variations').value) || 0,
+    deliverableUserId: $('f-deliverable-user')?.value || null,
     status: $('f-status').value,
     ownerId: $('f-owner-select').dataset.value || null,
     attachments: demandAttachments.slice(),
@@ -3195,10 +3474,12 @@ async function saveDemand() {
       endDate: $('f-rec-end').value || null
     } : { enabled: false }
   };
+  console.log('[saveDemand] entregáveis raw:', _rawQty, '→ payload:', { p: payload.qtyPieces, a: payload.qtyArts, v: payload.qtyVariations });
   try {
     let result;
     if (editingId) result = await api('/demands/' + editingId, 'PUT', payload);
     else result = await api('/demands', 'POST', payload);
+    console.log('[saveDemand] resposta qty:', { p: result?.qtyPieces, a: result?.qtyArts, v: result?.qtyVariations });
     const wasCreate = !editingId;
     const newId = result && result.id;
     closeModal('demand-modal');
@@ -3209,7 +3490,10 @@ async function saveDemand() {
     } else {
       toast(editingId ? 'Demanda atualizada!' : 'Demanda criada!');
     }
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    console.error('[saveDemand] erro:', e);
+    toast(e.message, 'error');
+  }
 }
 
 /* ── Salvar como template ── */
@@ -3313,7 +3597,9 @@ async function refreshDetailDemand() {
 }
 function startDetailPoll() {
   stopDetailPoll();
-  _detailPollTimer = setInterval(refreshDetailDemand, 15000);
+  // SSE já refresca o modal em tempo real (handleSseMessage chama refreshDetailDemand).
+  // Mantemos polling de fallback em janela maior caso o SSE caia silenciosamente.
+  _detailPollTimer = setInterval(refreshDetailDemand, 60000);
 }
 function stopDetailPoll() {
   if (_detailPollTimer) { clearInterval(_detailPollTimer); _detailPollTimer = null; }
@@ -3490,6 +3776,30 @@ function renderDetail() {
           </div>
         </div>
 
+        <!-- Entregáveis no detalhe — botão Salvar explícito (não confia em onchange) -->
+        <div class="detail-section-block">
+          <div class="detail-section-title">Entregáveis</div>
+          <div class="qty-grid">
+            <div class="qty-cell">
+              <input class="form-control" id="detail-qty-pieces" type="number" min="0" step="1" value="${d.qtyPieces || ''}" placeholder="0">
+              <span class="qty-cell-label">Peças <span class="qty-cell-hint" title="Peças únicas. Ex.: 1 criativo + 1 carrossel = 2">?</span></span>
+            </div>
+            <div class="qty-cell">
+              <input class="form-control" id="detail-qty-arts" type="number" min="0" step="1" value="${d.qtyArts || ''}" placeholder="0">
+              <span class="qty-cell-label">Artes <span class="qty-cell-hint" title="Total de artes individuais. Ex.: 1 criativo + carrossel de 3 telas = 4 artes">?</span></span>
+            </div>
+            <div class="qty-cell">
+              <input class="form-control" id="detail-qty-variations" type="number" min="0" step="1" value="${d.qtyVariations || ''}" placeholder="0">
+              <span class="qty-cell-label">Variações <span class="qty-cell-hint" title="Exportações/formatos. Ex.: 1 criativo em 3 formatos = 3 variações">?</span></span>
+            </div>
+          </div>
+          <div class="detail-deliverable-attr">
+            <label class="form-label" style="margin:0">Atribuir a <span class="qty-cell-hint" title="Quem realmente executou estas artes. Se vazio, conta pro responsável atual da demanda (que pode estar em outra etapa do fluxo).">?</span></label>
+            <select class="form-control" id="detail-deliverable-user" style="max-width:280px"></select>
+            <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="saveDeliverablesDetail()"><i data-lucide="save" class="ic-sm"></i> Salvar entregáveis</button>
+          </div>
+        </div>
+
         <div class="detail-section-block">
           <div class="field-head">
             <div class="field-label">Briefing</div>
@@ -3595,6 +3905,8 @@ function renderDetail() {
   if (getTimer(detailId).running) ensureTimerInterval();
 
   detailDirty = {};
+  // Popula select de "atribuir entregáveis a" — só agora que o DOM tá renderizado
+  fillDeliverableUserSelect('detail-deliverable-user', d.deliverableUserId || '');
   paintIcons();
   // Garante que datetime-local inputs recém-renderizados usem o picker customizado
   if (typeof fdpConvertAll === 'function') fdpConvertAll();
@@ -3970,6 +4282,38 @@ function onRecurrencePatternChange() {
   $('detail-rec-weekday-group').style.display = p === 'weekly' ? '' : 'none';
   $('detail-rec-monthday-group').style.display = p === 'monthly' ? '' : 'none';
 }
+/* Popula <select> de "atribuir entregáveis a" — usuários ativos do workspace +
+   opção vazia (= cai pro responsável atual da demanda). */
+function fillDeliverableUserSelect(selId, currentValue) {
+  const sel = document.getElementById(selId);
+  if (!sel) return;
+  const list = wsUsers().slice().sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+  sel.innerHTML = '<option value="">— Responsável atual da demanda —</option>' +
+    list.map(u => `<option value="${u.id}" ${u.id === currentValue ? 'selected' : ''}>${esc(u.name)}${u.role ? ' · ' + esc(u.role) : ''}</option>`).join('');
+}
+
+/* Salva os 3 campos de entregáveis + usuário atribuído (do detail) via botão explícito. */
+async function saveDeliverablesDetail() {
+  if (!detailId) return;
+  const payload = {
+    qtyPieces: Number($('detail-qty-pieces')?.value) || 0,
+    qtyArts: Number($('detail-qty-arts')?.value) || 0,
+    qtyVariations: Number($('detail-qty-variations')?.value) || 0,
+    deliverableUserId: $('detail-deliverable-user')?.value || null
+  };
+  console.log('[saveDeliverables] payload:', payload);
+  try {
+    const upd = await api('/demands/' + detailId, 'PUT', payload);
+    console.log('[saveDeliverables] resposta:', { p: upd.qtyPieces, a: upd.qtyArts, v: upd.qtyVariations, by: upd.deliverableUserId });
+    patchDemand(upd);
+    toast('Entregáveis atualizados!');
+    renderDetail();
+  } catch (e) {
+    console.error('[saveDeliverables] erro:', e);
+    toast(e.message || 'Erro ao salvar entregáveis', 'error');
+  }
+}
+
 async function editEstimatedInline() {
   const d = demandById(detailId); if (!d) return;
   const val = await showPrompt({
@@ -4137,7 +4481,7 @@ function renderDetailDirtyBadge() {
   if (existing) return;
   const bar = document.createElement('div');
   bar.id = 'detail-save-pending';
-  bar.style.cssText = 'position:sticky;top:80px;background:var(--accent-dim);border:1px solid var(--accent);border-radius:50%;padding:10px 14px;display:flex;align-items:center;gap:12px;margin-bottom:18px;font-size:12px;color:var(--accent-text);font-weight:600;z-index:1';
+  bar.style.cssText = 'position:sticky;top:80px;background:var(--accent-dim);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 14px;display:flex;align-items:center;gap:12px;margin-bottom:18px;font-size:12px;color:var(--accent-text);font-weight:600;z-index:1';
   bar.innerHTML = `
     <span><i data-lucide="alert-triangle" class="ic-sm"></i> Alterações pendentes</span>
     <button class="btn btn-primary btn-sm" onclick="commitDetailEdits()" style="margin-left:auto">Salvar</button>
@@ -7068,27 +7412,48 @@ function renderClientTimeBlock(clientId) {
         <div class="client-chart-title">Horas</div>
         <div class="client-chart-value">${fmtHours(totalHours)} <span class="client-chart-delta">no período</span></div>
       </div>
-      <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:200px;display:block">
-        <defs>
-          <linearGradient id="clientHoursGrad" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stop-color="#3CE3A0" stop-opacity="0.35"/>
-            <stop offset="100%" stop-color="#3CE3A0" stop-opacity="0"/>
-          </linearGradient>
-        </defs>
-        <g stroke="rgba(255,255,255,0.05)" stroke-width="1">
-          <line x1="${padL}" y1="${padT}" x2="${w - padR}" y2="${padT}"/>
-          <line x1="${padL}" y1="${padT + innerH/2}" x2="${w - padR}" y2="${padT + innerH/2}"/>
-          <line x1="${padL}" y1="${padT + innerH}" x2="${w - padR}" y2="${padT + innerH}"/>
-        </g>
-        <g fill="var(--text-muted)" font-size="9" font-family="'JetBrains Mono', monospace">
-          <text x="${padL - 6}" y="${padT + 4}" text-anchor="end">${peak}h</text>
-          <text x="${padL - 6}" y="${padT + innerH/2 + 4}" text-anchor="end">${Math.round(peak/2)}h</text>
-          <text x="${padL - 6}" y="${padT + innerH + 4}" text-anchor="end">0</text>
-        </g>
-        ${areaPath ? `<path d="${areaPath}" fill="url(#clientHoursGrad)"/>` : ''}
-        ${linePath ? `<path d="${linePath}" fill="none" stroke="#3CE3A0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>` : ''}
-      </svg>
+      <div class="chart-hover-host" id="cli-chart-host">
+        <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:200px;display:block">
+          <defs>
+            <linearGradient id="clientHoursGrad" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="#3CE3A0" stop-opacity="0.35"/>
+              <stop offset="100%" stop-color="#3CE3A0" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <g stroke="rgba(255,255,255,0.05)" stroke-width="1" vector-effect="non-scaling-stroke">
+            <line x1="${padL}" y1="${padT}" x2="${w - padR}" y2="${padT}"/>
+            <line x1="${padL}" y1="${padT + innerH/2}" x2="${w - padR}" y2="${padT + innerH/2}"/>
+            <line x1="${padL}" y1="${padT + innerH}" x2="${w - padR}" y2="${padT + innerH}"/>
+          </g>
+          <g fill="var(--text-muted)" font-size="11" font-family="'JetBrains Mono', monospace">
+            <text x="${padL - 6}" y="${padT + 4}" text-anchor="end">${peak}h</text>
+            <text x="${padL - 6}" y="${padT + innerH/2 + 4}" text-anchor="end">${Math.round(peak/2)}h</text>
+            <text x="${padL - 6}" y="${padT + innerH + 4}" text-anchor="end">0</text>
+          </g>
+          ${areaPath ? `<path d="${areaPath}" fill="url(#clientHoursGrad)"/>` : ''}
+          ${linePath ? `<path d="${linePath}" fill="none" stroke="#3CE3A0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>` : ''}
+          <line id="cli-chart-guide" class="chart-guide" x1="0" y1="${padT}" x2="0" y2="${padT + innerH}" stroke="rgba(255,255,255,0.35)" stroke-width="1" vector-effect="non-scaling-stroke" style="opacity:0;pointer-events:none"/>
+          <circle id="cli-chart-marker" r="4" fill="#3CE3A0" stroke="#fff" stroke-width="1.5" vector-effect="non-scaling-stroke" style="opacity:0;pointer-events:none"/>
+        </svg>
+        <div class="chart-tooltip" id="cli-chart-tooltip"></div>
+      </div>
     </div>`;
+    // Wire hover
+    const host = $('cli-chart-host');
+    if (host && points.length) {
+      const tipPoints = buckets.map((b, i) => ({
+        x: points[i][0], label: new Date(b.ymd + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }),
+        series: [{ name: 'Horas', value: b.hours, y: points[i][1], color: '#3CE3A0' }]
+      }));
+      attachChartHover(host, {
+        viewBox: { w, h, padL, padR, padT, innerH },
+        points: tipPoints,
+        lineEls: $('cli-chart-guide'),
+        markerEls: [$('cli-chart-marker')],
+        tooltipEl: $('cli-chart-tooltip'),
+        format: (v) => v > 0 ? fmtHours(v) : '0h'
+      });
+    }
   }
 }
 
@@ -7116,13 +7481,35 @@ function openClientModal(id) {
   // Datalist de segmentos existentes
   const segs = [...new Set(clients.map(x => x.segment).filter(Boolean))].sort();
   $('client-segments-datalist').innerHTML = segs.map(s => `<option value="${esc(s)}">`).join('');
-  // Footer: edit mostra status toggle + excluir
+  // Footer: edit mostra status toggle + excluir + salvar como modelo
   $('c-foot-left').style.display = '';
   $('c-delete-btn').style.display = isNew ? 'none' : '';
   $('c-status-group').style.display = isNew ? 'none' : '';
+  $('c-save-template-btn').style.display = isNew ? 'none' : '';
   if (c) {
     clientModalStatusActive = c.active !== false;
     refreshClientStatusUI();
+  }
+  // Onboarding: dropdown de modelos só no Novo
+  const tplBar = $('c-template-bar');
+  const tplSel = $('c-template');
+  if (isNew && tplSel && tplBar) {
+    const wsId = activeWs;
+    const myTpls = (clientTemplates || []).filter(t => t.workspaceId === wsId);
+    if (myTpls.length) {
+      tplBar.style.display = '';
+      tplSel.innerHTML = `<option value="">— Em branco —</option>` +
+        myTpls.map(t => {
+          const nProj = (t.projects || []).length;
+          const nFlow = (t.projects || []).reduce((s, p) => s + (p.flows || []).length, 0);
+          return `<option value="${t.id}">${esc(t.name)} (${nProj} projeto${nProj === 1 ? '' : 's'} · ${nFlow} fluxo${nFlow === 1 ? '' : 's'})</option>`;
+        }).join('');
+      tplSel.value = '';
+    } else {
+      tplBar.style.display = 'none';
+    }
+  } else if (tplBar) {
+    tplBar.style.display = 'none';
   }
   openModal('client-modal');
   navPush(isNew ? '/clients/new' : '/clients/' + id + '/edit');
@@ -7170,6 +7557,22 @@ function refreshClientStatusUI() {
 async function saveClient() {
   const name = ($('c-name').value || '').trim();
   if (!name) { toast('Nome do cliente é obrigatório.', 'error'); return; }
+  // Modo "novo a partir de modelo" — usa endpoint dedicado que cria projetos+fluxos junto
+  const templateId = !editingClientId && $('c-template') ? $('c-template').value : '';
+  if (templateId) {
+    try {
+      const r = await api('/clients/from-template', 'POST', {
+        templateId, name, workspaceId: $('c-workspace').value
+      });
+      closeModal('client-modal');
+      toast(`Cliente criado a partir do modelo (${r.counts.projects} projeto${r.counts.projects === 1 ? '' : 's'}, ${r.counts.flows} fluxo${r.counts.flows === 1 ? '' : 's'}).`);
+      await refreshData();
+      return;
+    } catch (e) {
+      toast(e.message || 'Erro ao aplicar modelo', 'error');
+      return;
+    }
+  }
   const payload = {
     name,
     workspaceId: $('c-workspace').value,
@@ -7192,6 +7595,31 @@ async function saveClient() {
     await refreshData();
   } catch (e) {
     toast(e.message || 'Erro ao salvar cliente', 'error');
+  }
+}
+
+/* Salvar cliente atual como modelo — abre confirm que pede o nome */
+function openSaveClientTemplate() {
+  if (!editingClientId) return;
+  const c = clientById(editingClientId);
+  if (!c) return;
+  const projs = projects.filter(p => p.clientId === c.id && p.active !== false);
+  const flowsCount = projs.reduce((sum, p) => sum + flows.filter(f => f.projectId === p.id).length, 0);
+  $('c-tpl-save-summary').innerHTML = `Vai salvar <strong>${esc(c.name)}</strong> como modelo: <strong>${projs.length}</strong> projeto${projs.length === 1 ? '' : 's'} e <strong>${flowsCount}</strong> fluxo${flowsCount === 1 ? '' : 's'} ativos. Demandas, agendamentos e atribuições NÃO vão pro modelo.`;
+  $('c-tpl-save-name').value = `Modelo: ${c.name}`;
+  openModal('client-template-save-modal');
+  setTimeout(() => $('c-tpl-save-name').focus(), 60);
+}
+async function confirmSaveClientTemplate() {
+  const name = ($('c-tpl-save-name').value || '').trim();
+  if (!name) { toast('Dê um nome ao modelo.', 'error'); return; }
+  try {
+    await api('/client-templates', 'POST', { sourceClientId: editingClientId, name });
+    clientTemplates = await api('/client-templates');
+    closeModal('client-template-save-modal');
+    toast('Modelo salvo. Disponível ao criar um novo cliente.');
+  } catch (e) {
+    toast(e.message || 'Erro ao salvar modelo', 'error');
   }
 }
 
@@ -7737,6 +8165,138 @@ async function saveSchedule() {
   } catch (e) {
     console.error('[saveSchedule] falhou:', e);
     toast(e.message || 'Erro ao salvar', 'error');
+  }
+}
+
+/* ─── REAL-TIME SYNC (Server-Sent Events) ───────────────────────
+   EventSource conecta em /api/stream e recebe eventos sempre que
+   outro usuário muda algo no workspace acessível. Cada evento dispara
+   refetch da entidade afetada + re-render da página corrente.
+   Reconexão automática é nativa do EventSource — só tratamos o
+   fechamento explícito (logout).
+   Debounce: várias mudanças em rajada (ex.: bulk) viram 1 refetch. */
+let sseConnection = null;
+let _sseRefetchPending = new Set();
+let _sseRefetchTimer = null;
+
+function startRealtimeSync() {
+  if (sseConnection) return; // já conectado
+  try {
+    sseConnection = new EventSource('/api/stream');
+    sseConnection.addEventListener('message', onSseMessage);
+    sseConnection.addEventListener('error', () => {
+      // Browser tenta reconectar sozinho. Só logamos pra debug.
+      console.debug('[sse] error / reconnecting...');
+    });
+  } catch (e) {
+    console.warn('[sse] não foi possível conectar:', e);
+  }
+}
+
+function stopRealtimeSync() {
+  if (!sseConnection) return;
+  sseConnection.close();
+  sseConnection = null;
+}
+
+function onSseMessage(ev) {
+  let data; try { data = JSON.parse(ev.data); } catch { return; }
+  if (!data || !data.entity) return;
+  // Coalesce: várias mudanças em janela curta viram 1 refetch
+  _sseRefetchPending.add(data.entity);
+  clearTimeout(_sseRefetchTimer);
+  _sseRefetchTimer = setTimeout(flushSseRefetch, 250);
+}
+
+async function flushSseRefetch() {
+  const pending = [..._sseRefetchPending];
+  _sseRefetchPending.clear();
+  const tasks = [];
+  for (const entity of pending) {
+    if (entity === 'demand')   tasks.push(api('/demands').then(d => { demands = d; }).catch(()=>{}));
+    if (entity === 'schedule') tasks.push(api('/schedules').then(s => { schedules = s; }).catch(()=>{}));
+    if (entity === 'client')   tasks.push(api('/clients').then(c => { clients = c; }).catch(()=>{}));
+    if (entity === 'project')  tasks.push(api('/projects').then(p => { projects = p; }).catch(()=>{}));
+    if (entity === 'flow')     tasks.push(api('/flows').then(f => { flows = f; }).catch(()=>{}));
+  }
+  await Promise.all(tasks);
+  // Re-render só o que afeta a página atual — barato e correto
+  renderCurrent();
+  // Se modal de detalhe da demanda está aberto, refresca também
+  if (pending.includes('demand') && detailId && document.getElementById('detail-modal')?.classList.contains('open')) {
+    refreshDetailDemand();
+  }
+}
+
+/* ─── TOOLTIPS CUSTOMIZADOS ──────────────────────────────────
+   Substitui o tooltip nativo do browser (que vem de title="") por uma camada
+   estilizada com fade-in. Funciona pra QUALQUER elemento com title= no DOM,
+   inclusive os adicionados dinamicamente. Suprime o nativo movendo o atributo
+   pra data-ktip e removendo title em hover. */
+(function setupCustomTooltips() {
+  const tipEl = document.createElement('div');
+  tipEl.className = 'k-tooltip';
+  document.body.appendChild(tipEl);
+  let showTimer = null;
+  let activeTarget = null;
+
+  function getTipText(el) {
+    return el.getAttribute('data-ktip') || el.getAttribute('title') || '';
+  }
+
+  function positionTip(el) {
+    const r = el.getBoundingClientRect();
+    tipEl.style.left = (r.left + r.width / 2) + 'px';
+    tipEl.style.top = r.top + 'px';
+  }
+
+  function showFor(el) {
+    const text = getTipText(el);
+    if (!text) return;
+    // Move title pra data-ktip pra suprimir o nativo
+    if (el.hasAttribute('title')) {
+      el.setAttribute('data-ktip', el.getAttribute('title'));
+      el.removeAttribute('title');
+    }
+    tipEl.textContent = text;
+    positionTip(el);
+    tipEl.classList.add('show');
+  }
+  function hide() {
+    tipEl.classList.remove('show');
+    activeTarget = null;
+  }
+
+  document.addEventListener('mouseover', (e) => {
+    const t = e.target.closest('[title], [data-ktip]');
+    if (!t || t === activeTarget) return;
+    // Ignora pickers complexos onde o título é parte da UX (ex.: nada por enquanto)
+    activeTarget = t;
+    clearTimeout(showTimer);
+    showTimer = setTimeout(() => showFor(t), 280); // delay tipo macOS
+  }, true);
+  document.addEventListener('mouseout', (e) => {
+    const t = e.target.closest('[title], [data-ktip]');
+    if (!t) return;
+    clearTimeout(showTimer);
+    if (t === activeTarget) hide();
+  }, true);
+  document.addEventListener('scroll', () => { clearTimeout(showTimer); hide(); }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { clearTimeout(showTimer); hide(); } });
+})();
+
+/* ─── LOADING STATE EM BOTÕES ─────────────────────────────────
+   Helper: chame com um event ou um button + asyncFn. Aplica .is-loading
+   (CSS já tem regra com spinner) e disabled enquanto roda, restaura no fim. */
+async function withLoading(eventOrBtn, asyncFn) {
+  const btn = (eventOrBtn && eventOrBtn.currentTarget) || (eventOrBtn instanceof Element ? eventOrBtn : null);
+  if (!btn) return asyncFn();
+  btn.disabled = true;
+  btn.classList.add('is-loading');
+  try { return await asyncFn(); }
+  finally {
+    btn.disabled = false;
+    btn.classList.remove('is-loading');
   }
 }
 

@@ -189,6 +189,7 @@ function migrate() {
 
   if (!Array.isArray(db.clients)) db.clients = [];
   if (!Array.isArray(db.schedules)) db.schedules = [];
+  if (!Array.isArray(db.clientTemplates)) db.clientTemplates = [];
   db.projects.forEach(p => { if (!p.workspaceId) p.workspaceId = defWs; });
 
   // Migração: promover `project.client` (string) → entidade Client.
@@ -278,6 +279,12 @@ function migrate() {
     }
     if (!Array.isArray(d.stageHistory)) d.stageHistory = [];
     if (d.estimatedHours === undefined) d.estimatedHours = null;
+    if (d.qtyPieces === undefined) d.qtyPieces = 0;
+    if (d.qtyArts === undefined) d.qtyArts = 0;
+    if (d.qtyVariations === undefined) d.qtyVariations = 0;
+    // Quem executou os entregáveis (distinto do ownerId atual, que muda
+    // conforme a demanda avança no fluxo). Se null, cai pra ownerId.
+    if (d.deliverableUserId === undefined) d.deliverableUserId = null;
     if (d.recurrence === undefined) d.recurrence = null;
     if (d.priority === undefined || !Number.isInteger(d.priority)) d.priority = 3;
     if (d.stageEnteredAt === undefined) d.stageEnteredAt = d.createdAt || nowISO();
@@ -858,7 +865,15 @@ app.use((req, res, next) => {
   const isUpload = /^\/api\/(uploads|demands(\/[^/]+(\/comment)?)?$|me$|users(\/[^/]+)?$|projects(\/[^/]+)?$)/.test(req.path);
   return (isUpload ? jsonLg : jsonSm)(req, res, next);
 });
-app.use(express.static(path.join(__dirname, 'public')));
+// Static do SPA — sem cache em dev pra que mudanças em app.js/style.css/index.html
+// apareçam imediatamente. Anexos (/uploads/*) continuam servidos pelo bloco abaixo.
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (/\.(html|js|css)$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    }
+  }
+}));
 
 /* ── Uploads em disco ──
    Anexos (imagens em comentários, anexos de demanda, avatares) viram arquivos
@@ -1389,6 +1404,7 @@ app.post('/api/clients', requireAuth, (req, res) => {
   });
   db.clients.push(c);
   saveEntity('clients', c);
+  broadcastChange('client', 'create', { id: c.id, workspaceId: c.workspaceId, byUserId: req.user.id });
   res.status(201).json(c);
 });
 
@@ -1425,6 +1441,7 @@ app.put('/api/clients/:id', requireAuth, (req, res) => {
   // O `placeholder` (auto-criado pra órfãos) some quando o usuário edita o nome
   if (b.name && c.placeholder) delete c.placeholder;
   saveEntity('clients', c);
+  broadcastChange('client', 'update', { id: c.id, workspaceId: c.workspaceId, byUserId: req.user.id });
   res.json(c);
 });
 
@@ -1437,9 +1454,156 @@ app.delete('/api/clients/:id', requireAuth, (req, res) => {
       error: `Este cliente tem ${linkedProjects.length} projeto(s) vinculado(s). Exclua ou mova os projetos antes.`
     });
   }
+  const wsId = c.workspaceId;
   db.clients = db.clients.filter(x => x.id !== c.id);
   removeEntity('clients', c.id);
+  broadcastChange('client', 'delete', { id: c.id, workspaceId: wsId, byUserId: req.user.id });
   res.json({ ok: true });
+});
+
+/* ── MODELOS DE CLIENTE (onboarding em 1 clique) ──
+   Um clientTemplate é um snapshot reutilizável de um cliente:
+   metadados (segmento, diretrizes) + projetos + fluxos exclusivos.
+   Não inclui demandas, agendamentos ou roleAssignments (sempre vazios
+   no cliente novo). Aplicar um template cria todas as entidades de uma vez. */
+app.get('/api/client-templates', requireAuth, (req, res) => {
+  const ids = wsIdsFor(req.user);
+  res.json((db.clientTemplates || []).filter(t => ids.includes(t.workspaceId)));
+});
+
+app.post('/api/client-templates', requireAuth, (req, res) => {
+  const b = req.body || {};
+  const sourceClientId = b.sourceClientId;
+  const tplName = String(b.name || '').trim();
+  if (!sourceClientId) return res.status(400).json({ error: 'sourceClientId é obrigatório.' });
+  if (!tplName) return res.status(400).json({ error: 'Dê um nome ao modelo.' });
+  const c = db.clients.find(x => x.id === sourceClientId);
+  if (!c || !canAccessWs(req.user, c.workspaceId)) return res.status(404).json({ error: 'Cliente não encontrado.' });
+
+  // Snapshot dos projetos do cliente (só ativos por default)
+  const projs = db.projects
+    .filter(p => p.clientId === c.id && p.active !== false)
+    .map(p => {
+      const flows = db.flows
+        .filter(f => f.projectId === p.id)
+        .map(f => ({
+          name: f.name, demandType: f.demandType || '',
+          // Stages sem id — geramos novos ao aplicar
+          stages: (f.stages || []).map(s => ({
+            label: s.label, color: s.color, done: !!s.done,
+            roleFilter: s.roleFilter || null,
+            responsibleRole: s.responsibleRole || null,
+            deadlineDays: s.deadlineDays || null
+          }))
+        }));
+      return {
+        name: p.name, color: p.color,
+        driveFiles: p.driveFiles || '', brandAssets: p.brandAssets || '',
+        guidelines: p.guidelines || '', flows
+      };
+    });
+
+  const tpl = {
+    id: uid(),
+    workspaceId: c.workspaceId,
+    name: tplName,
+    color: c.color || '#7A00FF',
+    segment: c.segment || '',
+    driveFiles: c.driveFiles || '',
+    brandAssets: c.brandAssets || '',
+    guidelines: c.guidelines || '',
+    projects: projs,
+    createdAt: nowISO(),
+    createdBy: req.user.id
+  };
+  db.clientTemplates.push(tpl);
+  saveEntity('clientTemplates', tpl);
+  res.status(201).json(tpl);
+});
+
+app.delete('/api/client-templates/:id', requireAuth, (req, res) => {
+  const t = db.clientTemplates.find(x => x.id === req.params.id);
+  if (!t || !canAccessWs(req.user, t.workspaceId)) return res.status(404).json({ error: 'Modelo não encontrado.' });
+  db.clientTemplates = db.clientTemplates.filter(x => x.id !== t.id);
+  removeEntity('clientTemplates', t.id);
+  res.json({ ok: true });
+});
+
+/* Aplica um template criando cliente + projetos + fluxos.
+   Body: { templateId, name, workspaceId? }
+   Tudo dentro de uma operação atômica do ponto de vista do request — se algo
+   falhar no meio, abortamos e devolvemos o que foi criado pra rollback manual
+   (raro, mas registrado pra debug). */
+app.post('/api/clients/from-template', requireAuth, (req, res) => {
+  const b = req.body || {};
+  const tpl = db.clientTemplates.find(t => t.id === b.templateId);
+  if (!tpl) return res.status(404).json({ error: 'Modelo não encontrado.' });
+  const wsId = b.workspaceId && canAccessWs(req.user, b.workspaceId) ? b.workspaceId : tpl.workspaceId;
+  if (!canAccessWs(req.user, wsId)) return res.status(403).json({ error: 'Sem acesso ao workspace.' });
+  const newName = String(b.name || '').trim();
+  if (!newName) return res.status(400).json({ error: 'Nome do cliente é obrigatório.' });
+  // Bloqueia duplicidade
+  if (db.clients.some(c => c.workspaceId === wsId && (c.name || '').trim().toLowerCase() === newName.toLowerCase())) {
+    return res.status(409).json({ error: 'Já existe um cliente com esse nome neste workspace.' });
+  }
+
+  const createdProjects = [];
+  const createdFlows = [];
+  const client = {
+    id: uid(),
+    workspaceId: wsId,
+    name: newName,
+    color: tpl.color || '#7A00FF',
+    avatar: null,
+    segment: tpl.segment || '',
+    driveFiles: tpl.driveFiles || '',
+    brandAssets: tpl.brandAssets || '',
+    guidelines: tpl.guidelines || '',
+    active: true,
+    createdAt: nowISO()
+  };
+  db.clients.push(client);
+  saveEntity('clients', client);
+
+  for (const ptpl of (tpl.projects || [])) {
+    const project = {
+      id: uid(), workspaceId: wsId, name: ptpl.name,
+      clientId: client.id, client: client.name,
+      color: ptpl.color || client.color || '#7A00FF',
+      avatar: null,
+      driveFiles: ptpl.driveFiles || '',
+      brandAssets: ptpl.brandAssets || '',
+      guidelines: ptpl.guidelines || '',
+      active: true, createdAt: nowISO()
+    };
+    db.projects.push(project);
+    saveEntity('projects', project);
+    createdProjects.push(project);
+
+    for (const ftpl of (ptpl.flows || [])) {
+      const stages = sanitizeStages((ftpl.stages || []).map(s => ({ ...s, id: uid() })));
+      if (!stages) continue;
+      const flow = {
+        id: uid(), workspaceId: wsId, projectId: project.id,
+        clientId: client.id, client: client.name,
+        icon: null,
+        name: ftpl.name, demandType: ftpl.demandType || '',
+        stages, createdAt: nowISO()
+      };
+      db.flows.push(flow);
+      saveEntity('flows', flow);
+      createdFlows.push(flow);
+    }
+  }
+
+  broadcastChange('client', 'create', { id: client.id, workspaceId: wsId, byUserId: req.user.id });
+  broadcastChange('project', 'create', { workspaceId: wsId, byUserId: req.user.id });
+  broadcastChange('flow', 'create', { workspaceId: wsId, byUserId: req.user.id });
+
+  res.status(201).json({
+    client,
+    counts: { projects: createdProjects.length, flows: createdFlows.length }
+  });
 });
 
 /* ── PROJETOS (filtrados por workspace acessível) ── */
@@ -1487,6 +1651,7 @@ app.post('/api/projects', requireAuth, (req, res) => {
   };
   db.projects.push(p);
   saveEntity('projects', p);
+  broadcastChange('project', 'create', { id: p.id, workspaceId: p.workspaceId, byUserId: req.user.id });
   res.status(201).json(p);
 });
 
@@ -1533,6 +1698,7 @@ app.put('/api/projects/:id', requireAuth, (req, res) => {
     db.demands.forEach(d => { if (d.projectId === p.id) d.workspaceId = workspaceId; });
   }
   saveDB();
+  broadcastChange('project', 'update', { id: p.id, workspaceId: p.workspaceId, byUserId: req.user.id });
   res.json(p);
 });
 
@@ -1544,11 +1710,13 @@ app.delete('/api/projects/:id', requireAuth, (req, res) => {
   if (linkedDemands.length && !force) {
     return res.status(409).json({ error: `Este projeto possui ${linkedDemands.length} demanda(s) vinculada(s).`, demands: linkedDemands.length });
   }
+  const wsId = p.workspaceId;
   // Cascade: remove demandas, fluxos exclusivos e o próprio projeto
   db.demands = db.demands.filter(d => d.projectId !== req.params.id);
   db.flows = db.flows.filter(f => f.projectId !== req.params.id);
   db.projects = db.projects.filter(x => x.id !== req.params.id);
   saveDB();
+  broadcastChange('project', 'delete', { id: req.params.id, workspaceId: wsId, byUserId: req.user.id });
   res.json({ ok: true, deleted: { demands: linkedDemands.length } });
 });
 
@@ -1664,6 +1832,7 @@ app.post('/api/flows', requireAuth, adminOnly, (req, res) => {
       saveEntity('flows', f);
       created.push(f);
     }
+    broadcastChange('flow', 'create', { workspaceId: ws, byUserId: req.user.id });
     return res.status(201).json({ created, count: created.length });
   }
   const f = {
@@ -1675,6 +1844,7 @@ app.post('/api/flows', requireAuth, adminOnly, (req, res) => {
   };
   db.flows.push(f);
   saveEntity('flows', f);
+  broadcastChange('flow', 'create', { id: f.id, workspaceId: f.workspaceId, byUserId: req.user.id });
   res.status(201).json(f);
 });
 
@@ -1730,6 +1900,7 @@ app.put('/api/flows/:id', requireAuth, adminOnly, (req, res) => {
     });
   }
   saveDB();
+  broadcastChange('flow', 'update', { id: f.id, workspaceId: f.workspaceId, byUserId: req.user.id });
   res.json(f);
 });
 
@@ -1739,8 +1910,10 @@ app.delete('/api/flows/:id', requireAuth, adminOnly, (req, res) => {
   if (db.demands.some(d => d.flowId === req.params.id)) {
     return res.status(409).json({ error: 'Este fluxo possui demandas vinculadas e não pode ser excluído.' });
   }
+  const wsId = f.workspaceId;
   db.flows = db.flows.filter(x => x.id !== req.params.id);
   saveDB();
+  broadcastChange('flow', 'delete', { id: req.params.id, workspaceId: wsId, byUserId: req.user.id });
   res.json({ ok: true });
 });
 
@@ -1845,6 +2018,14 @@ app.post('/api/demands', requireAuth, (req, res) => {
     deadline: b.deadline || null,
     estimatedHours: Number(b.estimatedHours) > 0 ? Math.round(Number(b.estimatedHours) * 100) / 100 : null,
     priority: [1,2,3,4].includes(Number(b.priority)) ? Number(b.priority) : 3,
+    // Entregáveis (3 contagens distintas — performance/produtividade):
+    //   qtyPieces  = peças únicas (ex.: 1 criativo + 1 carrossel = 2)
+    //   qtyArts    = artes individuais (1 criativo + carrossel de 3 telas = 4)
+    //   qtyVariations = exportações/variações (1 criativo em 3 formatos = 3)
+    qtyPieces:     Number(b.qtyPieces) > 0 ? Math.floor(Number(b.qtyPieces)) : 0,
+    qtyArts:       Number(b.qtyArts) > 0 ? Math.floor(Number(b.qtyArts)) : 0,
+    qtyVariations: Number(b.qtyVariations) > 0 ? Math.floor(Number(b.qtyVariations)) : 0,
+    deliverableUserId: b.deliverableUserId || null,
     status: stage.id,
     ownerId: b.ownerId || resolveStageOwner(stage, project) || null,
     stageEnteredAt: nowISO(), stageDueDate: stageDue,
@@ -1871,6 +2052,7 @@ app.post('/api/demands', requireAuth, (req, res) => {
     owner: db.users.find(u => u.id === d.ownerId),
     appBaseUrl: reqBase
   }));
+  broadcastChange('demand', 'create', { id: d.id, workspaceId: d.workspaceId, byUserId: req.user.id });
   res.status(201).json(d);
 });
 
@@ -1878,6 +2060,12 @@ function getDemand(req, res) {
   const d = db.demands.find(x => x.id === req.params.id);
   if (!d || !canAccessWs(req.user, d.workspaceId)) { res.status(404).json({ error: 'Demanda não encontrada' }); return null; }
   return d;
+}
+// Helper pra reduzir boilerplate de SSE nas subrotinas de demanda
+// (apontamentos, comentários, checklist). Sempre dispara 'demand' 'update'
+// porque o cliente refetcha a demanda inteira, não a sub-entidade.
+function emitDemand(req, d, op = 'update') {
+  broadcastChange('demand', op, { id: d.id, workspaceId: d.workspaceId, byUserId: req.user.id });
 }
 
 // GET single demand — usado pelo frontend pra refrescar o modal de detalhe
@@ -1936,6 +2124,27 @@ app.put('/api/demands/:id', requireAuth, (req, res) => {
       const oldEst = d.estimatedHours;
       d.estimatedHours = newEst;
       addHistory(d, req.user.id, 'estimated_hours_changed', { from: oldEst, to: newEst });
+    }
+  }
+  // Entregáveis — editáveis a qualquer momento (inclusive depois de "concluída")
+  for (const field of ['qtyPieces', 'qtyArts', 'qtyVariations']) {
+    if (b[field] !== undefined) {
+      const v = Number(b[field]) > 0 ? Math.floor(Number(b[field])) : 0;
+      if (v !== d[field]) {
+        const oldV = d[field];
+        d[field] = v;
+        addHistory(d, req.user.id, 'deliverables_changed', { field, from: oldV, to: v });
+      }
+    }
+  }
+  // Quem fez os entregáveis (separado do ownerId atual, que pode mudar no fluxo).
+  // null = cai pro owner. Aceita string vazia como "limpar".
+  if (b.deliverableUserId !== undefined) {
+    const newVal = b.deliverableUserId || null;
+    if (newVal !== d.deliverableUserId) {
+      const oldVal = d.deliverableUserId;
+      d.deliverableUserId = newVal;
+      addHistory(d, req.user.id, 'deliverable_user_changed', { from: oldVal, to: newVal });
     }
   }
   if (b.priority !== undefined) {
@@ -2053,13 +2262,16 @@ app.put('/api/demands/:id', requireAuth, (req, res) => {
   if (!wasCompleted && d.completedAt) {
     fireWebhook('demand.completed', { demand: d, project, flow, user: req.user, owner, appBaseUrl: reqBase });
   }
+  broadcastChange('demand', 'update', { id: d.id, workspaceId: d.workspaceId, byUserId: req.user.id });
   res.json(d);
 });
 
 app.delete('/api/demands/:id', requireAuth, (req, res) => {
   const d = getDemand(req, res); if (!d) return;
+  const wsId = d.workspaceId;
   db.demands = db.demands.filter(x => x.id !== d.id);
   saveDB();
+  broadcastChange('demand', 'delete', { id: d.id, workspaceId: wsId, byUserId: req.user.id });
   res.json({ ok: true });
 });
 
@@ -2144,6 +2356,8 @@ app.post('/api/demands/bulk', requireAuth, (req, res) => {
     }
   }
   saveDB();
+  // Mudanças em lote: dispara um único evento "bulk" (frontend refetcha todas)
+  broadcastChange('demand', 'bulk', { workspaceId: req.user.isAdmin ? null : wsIdsFor(req.user)[0], byUserId: req.user.id });
   res.json({ updated, skipped, errors });
 });
 
@@ -2264,6 +2478,7 @@ app.post('/api/demands/:id/time', requireAuth, (req, res) => {
   d.timeEntries.push(entry);
   addHistory(d, req.user.id, 'time_added', { hours: entry.hours, stageId: entry.stageId });
   saveDB();
+  emitDemand(req, d);
   res.status(201).json(d);
 });
 
@@ -2285,6 +2500,7 @@ app.put('/api/demands/:id/time/:entryId', requireAuth, (req, res) => {
   e.editedAt = nowISO();
   addHistory(d, req.user.id, 'time_edited', { hours: e.hours, oldHours, stageId: e.stageId });
   saveDB();
+  emitDemand(req, d);
   res.json(d);
 });
 
@@ -2297,6 +2513,7 @@ app.delete('/api/demands/:id/time/:entryId', requireAuth, (req, res) => {
   if (e) addHistory(d, req.user.id, 'time_removed', { hours: e.hours, stageId: e.stageId });
   d.timeEntries = d.timeEntries.filter(x => x.id !== req.params.entryId);
   saveDB();
+  emitDemand(req, d);
   res.json(d);
 });
 
@@ -2333,6 +2550,7 @@ app.post('/api/demands/:id/comment', requireAuth, (req, res) => {
   if (mentions.length) {
     fireWebhook('comment.mention', { demand: d, project, flow, user: req.user, owner, comment: c, mentionedUsers, appBaseUrl: reqBase });
   }
+  emitDemand(req, d);
   res.status(201).json(d);
 });
 
@@ -2356,6 +2574,7 @@ app.put('/api/demands/:id/comment/:cid', requireAuth, (req, res) => {
     .map(u => u.id);
   addHistory(d, req.user.id, 'comment_edited', { commentId: c.id });
   saveDB();
+  emitDemand(req, d);
   res.json(d);
 });
 
@@ -2368,6 +2587,7 @@ app.delete('/api/demands/:id/comment/:cid', requireAuth, (req, res) => {
   if (c) addHistory(d, req.user.id, 'comment_removed', { commentId: c.id });
   d.comments = d.comments.filter(x => x.id !== req.params.cid);
   saveDB();
+  emitDemand(req, d);
   res.json(d);
 });
 
@@ -2387,6 +2607,7 @@ app.post('/api/demands/:id/comment/:cid/react', requireAuth, (req, res) => {
   if (arr.length === 0) delete c.reactions[emoji];
   else c.reactions[emoji] = arr;
   saveDB();
+  emitDemand(req, d);
   res.json(d);
 });
 
@@ -2404,6 +2625,7 @@ app.post('/api/demands/:id/checklist', requireAuth, (req, res) => {
   d.checklist.push(item);
   addHistory(d, req.user.id, 'checklist_added', { itemId: item.id, text });
   saveDB();
+  emitDemand(req, d);
   res.status(201).json(d);
 });
 app.put('/api/demands/:id/checklist/:itemId', requireAuth, (req, res) => {
@@ -2431,6 +2653,7 @@ app.put('/api/demands/:id/checklist/:itemId', requireAuth, (req, res) => {
     }
   }
   saveDB();
+  emitDemand(req, d);
   res.json(d);
 });
 app.delete('/api/demands/:id/checklist/:itemId', requireAuth, (req, res) => {
@@ -2439,6 +2662,7 @@ app.delete('/api/demands/:id/checklist/:itemId', requireAuth, (req, res) => {
   if (item) addHistory(d, req.user.id, 'checklist_removed', { itemId: item.id, text: item.text });
   d.checklist = (d.checklist || []).filter(x => x.id !== req.params.itemId);
   saveDB();
+  emitDemand(req, d);
   res.json(d);
 });
 
@@ -2494,6 +2718,7 @@ app.post('/api/schedules', requireAuth, (req, res) => {
   };
   db.schedules.push(s);
   saveEntity('schedules', s);
+  broadcastChange('schedule', 'create', { id: s.id, workspaceId: s.workspaceId, byUserId: req.user.id });
   res.status(201).json(s);
 });
 app.put('/api/schedules/:id', requireAuth, (req, res) => {
@@ -2518,14 +2743,17 @@ app.put('/api/schedules/:id', requireAuth, (req, res) => {
     s.date = merged.date; s.startMin = merged.startMin; s.endMin = merged.endMin;
   }
   saveEntity('schedules', s);
+  broadcastChange('schedule', 'update', { id: s.id, workspaceId: s.workspaceId, byUserId: req.user.id });
   res.json(s);
 });
 app.delete('/api/schedules/:id', requireAuth, (req, res) => {
   const s = getSchedule(req.params.id);
   if (!s) return res.status(404).json({ error: 'Agendamento não encontrado' });
   if (!canEditSchedule(req.user, s)) return res.status(403).json({ error: 'Você só remove os próprios agendamentos.' });
+  const wsId = s.workspaceId;
   db.schedules = db.schedules.filter(x => x.id !== s.id);
   removeEntity('schedules', s.id);
+  broadcastChange('schedule', 'delete', { id: s.id, workspaceId: wsId, byUserId: req.user.id });
   res.json({ ok: true });
 });
 
@@ -2833,6 +3061,66 @@ const _recBoot = setTimeout(runRecurrenceJob, 5000);
 const _recInterval = setInterval(runRecurrenceJob, 60 * 60 * 1000);
 if (_recBoot.unref) _recBoot.unref();
 if (_recInterval.unref) _recInterval.unref();
+
+/* ── REAL-TIME via Server-Sent Events ─────────────────────────────
+   Cada cliente conectado mantém uma resposta HTTP aberta com
+   `text/event-stream`. Mutations no app chamam broadcastChange(),
+   que filtra por workspace acessível e ecoa um JSON pro frontend
+   refetchar a entidade afetada. SSE > WebSocket aqui porque:
+   - Unidirecional (servidor → cliente) é tudo que precisamos
+   - HTTP/1.1 normal, atravessa proxies (Nginx Proxy Manager) sem upgrade
+   - Reconnect automático no EventSource do browser */
+const sseClients = new Map(); // userId → Set<res>
+
+app.get('/api/stream', requireAuth, (req, res) => {
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no' // desativa buffer do Nginx
+  });
+  res.flushHeaders();
+  res.write(': connected\n\n');
+
+  const userId = req.user.id;
+  if (!sseClients.has(userId)) sseClients.set(userId, new Set());
+  sseClients.get(userId).add(res);
+
+  // Heartbeat a cada 25s pra evitar timeouts de proxy (Nginx default = 60s)
+  const heartbeat = setInterval(() => {
+    try { res.write(': hb\n\n'); } catch {}
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    const set = sseClients.get(userId);
+    if (set) {
+      set.delete(res);
+      if (set.size === 0) sseClients.delete(userId);
+    }
+  });
+});
+
+/* Envia evento pra todos os clientes que têm acesso ao workspace,
+   exceto o usuário que originou a mudança (evita render duplicado).
+   entity: 'demand'|'schedule'|'client'|'project'|'flow'|'comment'|'user'|'workspace'
+   op:     'create'|'update'|'delete'
+   ctx:    { id?, workspaceId?, byUserId } */
+function broadcastChange(entity, op, ctx = {}) {
+  if (sseClients.size === 0) return;
+  const { id, workspaceId, byUserId } = ctx;
+  const payload = JSON.stringify({ entity, op, id, workspaceId, ts: Date.now() });
+  const line = `data: ${payload}\n\n`;
+  for (const [userId, conns] of sseClients) {
+    if (byUserId && userId === byUserId) continue;
+    const user = db.users.find(u => u.id === userId);
+    if (!user) continue;
+    if (workspaceId && !canAccessWs(user, workspaceId)) continue;
+    for (const res of conns) {
+      try { res.write(line); } catch {}
+    }
+  }
+}
 
 /* ── FALLBACK ── */
 // /api/* desconhecidos: devolve 404 JSON em vez de cair no SPA (que retornaria

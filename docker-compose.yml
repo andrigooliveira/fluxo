@@ -1,0 +1,85 @@
+# ────────────────────────────────────────────────────────────────
+# Kastor — Stack docker-compose pra Portainer (ou docker-compose CLI).
+#
+# Pré-requisitos: Docker 20+ / Compose v2.
+# Variáveis sensíveis (FLUXO_SECRET, SMTP_PASS) vêm do .env OU da aba
+# "Environment variables" do Portainer ao subir a Stack. NÃO commitar .env.
+# ────────────────────────────────────────────────────────────────
+services:
+  kastor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kastor:latest
+    container_name: kastor
+    restart: unless-stopped
+
+    # Mapeamento de porta: HOST:CONTAINER.
+    # Use HOST_PORT no .env pra ajustar conforme as portas livres da sua VPS
+    # (default 8080 pra não conflitar com Chatwoot que costuma usar 3000).
+    ports:
+      - "${HOST_PORT:-8080}:3000"
+
+    environment:
+      # ── Runtime ─────────────────────────────────────────
+      NODE_ENV: production
+      PORT: 3000
+      # Onde o app guarda kastor.db, secret.bin e uploads/.
+      # Bate com o volume montado abaixo. Não mude sem mudar lá.
+      KASTOR_DATA_DIR: /app/data
+
+      # ── Segurança ───────────────────────────────────────
+      # Chave hex 64 chars pra criptografar tokens em disco.
+      # Gere uma vez com:  openssl rand -hex 32
+      # SE NÃO definir, o app gera e salva em data/secret.bin (vai funcionar
+      # mas, se trocar o volume, todas as sessões expiram).
+      FLUXO_SECRET: ${FLUXO_SECRET:-}
+
+      # Duração das sessões em dias (default 30)
+      KASTOR_SESSION_DAYS: ${KASTOR_SESSION_DAYS:-30}
+
+      # ── URL pública (pra emails de reset de senha mostrarem o link certo)
+      PUBLIC_URL: ${PUBLIC_URL:-}
+
+      # ── SMTP (opcional — sem isso, "esqueci senha" não envia email) ─
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_FROM: ${SMTP_FROM:-}
+
+    volumes:
+      # Volume nomeado — sobrevive a rebuilds e updates da imagem.
+      # ATENÇÃO: se trocar o nome do volume, perde acesso aos dados antigos
+      # (a menos que migre manualmente). Pra backup: ver docs no fim do arquivo.
+      - kastor_data:/app/data
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/", "||", "exit", "1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  kastor_data:
+    # Driver default (local). Pra usar volume já existente da VPS:
+    #   external: true
+    #   name: nome_existente
+
+# ────────────────────────────────────────────────────────────────
+# BACKUP / RESTORE do volume (rodar no host onde o Docker tá):
+#
+#   # Backup → arquivo tar.gz com tudo de /app/data
+#   docker run --rm -v kastor_kastor_data:/data -v $(pwd):/backup \
+#     alpine tar czf /backup/kastor-backup-$(date +%F).tar.gz -C /data .
+#
+#   # Restore (com o container parado)
+#   docker run --rm -v kastor_kastor_data:/data -v $(pwd):/backup \
+#     alpine sh -c "cd /data && tar xzf /backup/kastor-backup-XXXX.tar.gz"
+#
+# O nome do volume na prática é PREFIX_kastor_data, onde PREFIX é o nome
+# da Stack no Portainer (ou nome da pasta com o compose). Confira com:
+#   docker volume ls | grep kastor
+# ────────────────────────────────────────────────────────────────

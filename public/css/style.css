@@ -97,15 +97,140 @@ body.user-readonly .admin-only { display: none !important; }
   --glass-strong: rgba(255,255,255,0.86);
   --surface-glass: rgba(255,255,255,0.78);
   --hairline: rgba(0,0,0,0.07);
+  --hairline-strong: rgba(0,0,0,0.14);
 }
 
-/* Garante que os pickers nativos (data, hora) usem o tema escuro do sistema */
+/* ─── LIGHT MODE: revisão de campos e elementos que estavam destoando ─── */
+/* Inputs/selects/textareas: fundo branco com borda visível em vez de cinza
+   sobre cinza (que ficava praticamente invisível com --bg #F5F5F5). */
+:root[data-theme="light"] .form-control {
+  background: #FFFFFF;
+  border: 1px solid rgba(0,0,0,0.12);
+}
+:root[data-theme="light"] .form-control:hover {
+  background: #FAFAFA;
+  border-color: rgba(0,0,0,0.20);
+}
+:root[data-theme="light"] .form-control:focus {
+  background: #FFFFFF;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(122,0,255,0.12);
+}
+/* Trigger do cdrop (Prioridade, Workspace, etc) — bem o mesmo padrão */
+:root[data-theme="light"] .filter-cdrop-trigger {
+  background: #FFFFFF;
+  border-color: rgba(0,0,0,0.12);
+  color: var(--text-dim);
+}
+:root[data-theme="light"] .filter-cdrop-trigger:hover {
+  background: #FAFAFA;
+  border-color: rgba(0,0,0,0.20);
+  color: var(--text);
+}
+:root[data-theme="light"] .filter-cdrop.filtering .filter-cdrop-trigger {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+/* Menu de cdrop e demais painéis flutuantes — sombra leve + borda mais marcada */
+:root[data-theme="light"] .filter-cdrop-menu,
+:root[data-theme="light"] .user-select-menu {
+  background: #FFFFFF;
+  border-color: rgba(0,0,0,0.10);
+  box-shadow: var(--shadow-md);
+}
+/* User-select (botão do responsável atual) */
+:root[data-theme="light"] .user-select-btn {
+  background: #FFFFFF;
+  border-color: rgba(0,0,0,0.12);
+}
+:root[data-theme="light"] .user-select-btn:hover { border-color: rgba(0,0,0,0.22); }
+
+/* Botões ghost (Anexos, navegação de semana, etc) — branco + borda em vez de
+   cinza-sobre-cinza */
+:root[data-theme="light"] .demand-att-btn,
+:root[data-theme="light"] .btn-ghost {
+  background: #FFFFFF;
+  border: 1px solid rgba(0,0,0,0.10);
+  color: var(--text-dim);
+}
+:root[data-theme="light"] .demand-att-btn:hover,
+:root[data-theme="light"] .btn-ghost:hover {
+  background: #FAFAFA;
+  border-color: rgba(0,0,0,0.18);
+  color: var(--text);
+}
+
+/* Cards do flow-grid e clients-grid — fundo branco contrastando com o bg */
+:root[data-theme="light"] .flow-card,
+:root[data-theme="light"] .client-card {
+  background: #FFFFFF;
+  border-color: rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-xs);
+}
+:root[data-theme="light"] .flow-card:hover,
+:root[data-theme="light"] .client-card:hover {
+  border-color: rgba(0,0,0,0.16);
+  box-shadow: var(--shadow-md);
+}
+/* Avatar/ícone dos cards de cliente com letra: usa accent-dim (suave) em
+   vez do roxo solidão que ficava agressivo no light. */
+:root[data-theme="light"] .flow-card-avatar:not([style*="background-image"]),
+:root[data-theme="light"] .client-card-avatar:not([style*="background-image"]) {
+  filter: saturate(0.9);
+}
+
+/* Toggle de view (1 semana / 2 semanas), chart toggle dots, etc — pílulas
+   suaves em vez do cinza-escuro herdado */
+:root[data-theme="light"] .agenda-view-toggle,
+:root[data-theme="light"] .client-status-toggle {
+  background: #FFFFFF;
+  border: 1px solid rgba(0,0,0,0.10);
+}
+
+/* Tabelas — fundo do thead um pouco mais quente (era invisível) */
+:root[data-theme="light"] .table-wrap { background: #FFFFFF; border: 1px solid rgba(0,0,0,0.08); }
+:root[data-theme="light"] table th { background: #FAFAFA; border-bottom-color: rgba(0,0,0,0.08); }
+:root[data-theme="light"] table td { border-bottom-color: rgba(0,0,0,0.06); }
+:root[data-theme="light"] tbody tr:hover { background: #F7F7FA; }
+
+/* Sidebar / topbar nos tons certos do light mode (já fazem glass, mas reforçando) */
+:root[data-theme="light"] .sidebar { background: rgba(255,255,255,0.78); border-right-color: rgba(0,0,0,0.08); }
+:root[data-theme="light"] .topbar { background: rgba(255,255,255,0.78); border-bottom-color: rgba(0,0,0,0.08); }
+
+/* Agenda: coluna de horários (HORÁRIO) e cabeçalho de dias ficam quase brancos
+   no light mode pra não destoar do bg geral. O cinza padrão (--surface-2)
+   ficava escurinho demais. */
+:root[data-theme="light"] .agenda-cell.is-time,
+:root[data-theme="light"] .agenda-cell.is-day-header,
+:root[data-theme="light"] .agenda-corner {
+  background: #FAFAFA;
+}
+:root[data-theme="light"] .agenda-cell.is-day-header.is-today {
+  background: var(--accent-dim);
+  color: var(--accent-text);
+}
+:root[data-theme="light"] .agenda-cell.is-day-header.is-week-gap { background: #F4F4F4; }
+
+/* Garante que os pickers nativos (data, hora) usem o tema correto do sistema */
 input[type="date"],
 input[type="time"],
 input[type="datetime-local"],
 input[type="month"],
 input[type="week"] {
   color-scheme: dark;
+}
+:root[data-theme="light"] input[type="date"],
+:root[data-theme="light"] input[type="time"],
+:root[data-theme="light"] input[type="datetime-local"],
+:root[data-theme="light"] input[type="month"],
+:root[data-theme="light"] input[type="week"] {
+  color-scheme: light;
+}
+:root[data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator,
+:root[data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator,
+:root[data-theme="light"] input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: none;
 }
 /* Estiliza o ícone do picker para combinar com o tema */
 input[type="date"]::-webkit-calendar-picker-indicator,
@@ -474,6 +599,34 @@ tr:hover td { background: var(--surface-2); }
 
 /* ── FILTERS ── */
 .filters-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: flex-end; }
+/* Agrupa label+controles num cluster centrado verticalmente, evitando que
+   o texto fique colado no fundo da filters-bar (que usa align-items: flex-end). */
+.filter-group-label { display: inline-flex; align-items: center; gap: 8px; }
+.filter-group-label-text { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+/* ─── Tooltip + guide line nos gráficos (clientes + dashboard) ─── */
+.chart-hover-host { position: relative; }
+.chart-hover-host svg { cursor: crosshair; }
+.chart-guide { transition: opacity .12s; }
+.chart-tooltip {
+  position: absolute; pointer-events: none;
+  background: var(--surface); border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow);
+  padding: 8px 10px; min-width: 130px; max-width: 240px;
+  font-size: 12px; color: var(--text);
+  opacity: 0; transition: opacity .12s, left .08s;
+  z-index: 10;
+}
+.chart-tip-head {
+  font-size: 11px; font-weight: 700; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.04em;
+  padding-bottom: 6px; margin-bottom: 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+.chart-tip-row { display: flex; align-items: center; gap: 8px; line-height: 1.4; padding: 2px 0; }
+.chart-tip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.chart-tip-label { flex: 1; color: var(--text-dim); font-size: 11.5px; }
+.chart-tip-value { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 .filter-select {
   background: var(--surface); border: 1px solid var(--hairline); color: var(--text-dim);
   padding: 0 14px; height: 40px; border-radius: var(--radius-sm); font-family: inherit; font-size: 13px;
@@ -520,12 +673,16 @@ tr:hover td { background: var(--surface-2); }
 .filter-native-hidden { display: none !important; }
 .filter-cdrop { position: relative; min-width: 160px; }
 .filter-cdrop-trigger {
-  display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px 0 14px;
+  display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px 0 14px;
   background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
   cursor: pointer; width: 100%; min-width: 160px;
   font-size: 13px; color: var(--text-dim); font-family: inherit;
   outline: none;
   transition: border-color .15s var(--ease-out), background .15s var(--ease-out), color .15s var(--ease-out), box-shadow .15s var(--ease-out);
+}
+/* Chevron do trigger: respiro extra e tamanho/cor consistentes (não fica colado na borda) */
+.filter-cdrop-trigger > i[data-lucide="chevron-down"] {
+  margin-left: 6px; opacity: 0.65; flex-shrink: 0;
 }
 .filter-cdrop-trigger:hover { background: var(--surface-2); color: var(--text); }
 .filter-cdrop.filtering .filter-cdrop-trigger { border-color: var(--accent); background: var(--accent-dim); color: var(--accent-text); }
@@ -661,8 +818,13 @@ tr:hover td { background: var(--surface-2); }
 }
 .modal-overlay.open .modal { transform: translateY(0) scale(1); opacity: 1; }
 .modal-header {
-  padding: 22px 28px 0; display: flex; align-items: flex-start; justify-content: space-between;
-  position: sticky; top: 0; background: var(--surface); z-index: 1;
+  padding: 22px 28px 18px; display: flex; align-items: flex-start; justify-content: space-between;
+  position: sticky; top: 0; z-index: 1;
+  /* Gradient sutil de accent — puxa o brand sem dominar */
+  background:
+    linear-gradient(to bottom, var(--accent-dim) 0%, transparent 80%),
+    var(--surface);
+  border-bottom: 1px solid var(--hairline);
 }
 .modal-title { font-size: 17px; font-weight: 700; letter-spacing: -0.015em; }
 .modal-close {
@@ -841,14 +1003,33 @@ textarea.form-control { height: auto; min-height: 80px; padding: 11px 14px; }
   color: var(--text-muted);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
 }
+/* Ilustração maior (não é mais um ícone, é uma cena com accent + camadas).
+   Não aplica opacity global pra preservar a cor do accent. */
 .empty-state-icon {
-  width: 112px; height: 112px;
-  margin-bottom: 18px;
+  width: 200px; height: 150px;
+  margin-bottom: 20px;
   color: var(--text-muted);
-  opacity: 0.42;
   display: flex; align-items: center; justify-content: center;
 }
-.empty-state-icon svg { width: 100%; height: 100%; stroke-width: 1.2; }
+.empty-state-icon svg { width: 100%; height: 100%; }
+
+/* ─── Onboarding: barra de "começar a partir de modelo" no modal de cliente ─── */
+.client-template-bar {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px; margin-bottom: 20px;
+  background: var(--accent-dim);
+  border: 1px solid rgba(122, 0, 255, 0.25);
+  border-radius: var(--radius);
+}
+.client-template-bar-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  background: var(--accent); color: #fff;
+  border-radius: 50%; flex-shrink: 0;
+}
+.client-template-bar-text { flex: 1; min-width: 0; }
+.client-template-bar-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.client-template-bar-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .empty-state-title { font-size: 15px; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; letter-spacing: -0.005em; }
 .empty-state-sub { font-size: 13px; max-width: 340px; line-height: 1.55; }
 
@@ -930,9 +1111,15 @@ textarea.form-control { height: auto; min-height: 80px; padding: 11px 14px; }
 .user-select-btn {
   width: 100%; display: flex; align-items: center; gap: 10px; cursor: pointer;
   background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
-  padding: 8px 12px; border-radius: var(--radius-sm); font-family: inherit; font-size: 13px;
+  padding: 8px 16px 8px 12px; border-radius: var(--radius-sm); font-family: inherit; font-size: 13px;
   transition: border-color .2s; text-align: left;
+  min-height: 48px; box-sizing: border-box;
 }
+/* Chevron do user-select — empurrado pra direita pelo margin-left auto, com respiro do margin direito do botão */
+.user-select-btn > i[data-lucide="chevron-down"] { margin-left: auto; opacity: 0.6; flex-shrink: 0; }
+/* No modal de demanda, Prioridade (filter-cdrop) e Responsável (user-select)
+   ficam lado a lado — alinhamos a altura visual pra evitar campos desencontrados. */
+#demand-modal .filter-cdrop-trigger { height: 48px; }
 .user-select-btn:hover { border-color: var(--border-active); }
 .user-select-btn .chev { margin-left: auto; color: var(--text-muted); font-size: 10px; }
 .user-select-menu {
@@ -1066,7 +1253,14 @@ textarea.form-control { height: auto; min-height: 80px; padding: 11px 14px; }
 
 /* ─── NOTIFICAÇÕES ─── */
 .notif-wrap { position: relative; }
-.notif-bell { position: relative; padding: 6px 8px; transition: color .15s var(--ease-out); }
+/* Topbar: zen e notificações ficam com a mesma "caixa" 36x36 pra alinhar visualmente */
+.topbar-actions .zen-toggle-btn,
+.topbar-actions .notif-bell {
+  width: 36px; height: 36px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  position: relative;
+}
+.notif-bell { transition: color .15s var(--ease-out); }
 .notif-bell.has-unread { color: var(--accent-text); }
 .notif-bell.pulse { animation: bellShake .55s var(--ease-spring); transform-origin: top center; }
 @keyframes bellShake {
@@ -1402,6 +1596,16 @@ textarea.form-control { height: auto; min-height: 80px; padding: 11px 14px; }
 [data-lucide] { display: inline-block; vertical-align: middle; }
 i.ic-xs [data-lucide],
 i.ic-xs { width: 12px; height: 12px; stroke-width: 2.5; }
+/* Cabeçalhos sortáveis: ícone padrão 16px + opacity baixa pra não competir
+   com o título. O <i> é substituído por <svg.lucide-chevrons-up-down> depois
+   do lucide.createIcons(), por isso miramos AMBOS pra cobrir os 2 estados. */
+th i[data-lucide="chevrons-up-down"],
+th svg.lucide-chevrons-up-down {
+  width: 16px !important; height: 16px !important;
+  opacity: 0.45; margin-left: 6px; vertical-align: middle; flex-shrink: 0;
+}
+th:hover i[data-lucide="chevrons-up-down"],
+th:hover svg.lucide-chevrons-up-down { opacity: 0.85; }
 i.ic-sm [data-lucide],
 i.ic-sm { width: 16px; height: 16px; stroke-width: 2; }
 i.ic-md [data-lucide],
@@ -1459,6 +1663,42 @@ i[data-lucide]:not([class*=ic-]) { width: 16px; height: 16px; stroke-width: 2; }
 .demand-att-btn:hover { border-color: var(--accent-text); background: var(--surface-3, var(--surface-2)); }
 .demand-att-btn i { color: var(--text-muted); }
 
+/* ─── Entregáveis (3 contagens) ───
+   Modal: grid de 3 inputs com label embaixo + tooltip "?". Tabelas: pill compacta. */
+.qty-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+/* 3 contadores estreitos + 1 select largo (cabe nome do user inteiro) */
+.qty-grid-4 { grid-template-columns: 0.6fr 0.6fr 0.6fr 2fr; }
+.qty-cell { display: flex; flex-direction: column; gap: 4px; }
+.qty-cell .form-control { font-variant-numeric: tabular-nums; font-weight: 600; }
+.qty-cell input.form-control[type="number"] { text-align: center; }
+.qty-cell select.form-control { font-weight: 500; padding: 0 14px; }
+.qty-cell-label {
+  font-size: 11px; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: 0.04em; text-align: center; display: inline-flex;
+  align-items: center; justify-content: center; gap: 5px;
+}
+.qty-cell-hint {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--surface-3); color: var(--text-muted);
+  font-size: 9px; font-weight: 700; cursor: help;
+}
+.qty-cell-hint:hover { background: var(--accent-dim); color: var(--accent-text); }
+
+/* Célula compacta nas tabelas: 3 números separados por · */
+.qty-cell-compact {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text-dim);
+  white-space: nowrap;
+}
+.qty-cell-compact .qty-num { color: var(--text); font-weight: 600; min-width: 16px; text-align: center; }
+.qty-cell-compact .qty-sep { color: var(--text-muted); opacity: 0.6; }
+.qty-cell-empty { color: var(--text-muted); }
+
+/* Tabelas com a coluna extra ficam apertadas — reduz 1px na fonte das células */
+.table-wrap table td { font-size: 12.5px; }
+.table-wrap table th { font-size: 11px; }
+
 /* ─── AGENDA ───────────────────────────────────────────
    Grade tipo planilha: HORÁRIO (1 col fixa) × N dias úteis.
    Cada linha = 30min. Blocos posicionados absolutamente sobre as células.
@@ -1487,11 +1727,14 @@ i[data-lucide]:not([class*=ic-]) { width: 16px; height: 16px; stroke-width: 2; }
 }
 .agenda-cell {
   border-right: 1px solid var(--hairline);
-  border-bottom: 1px solid var(--hairline);
+  /* Subdivisão de 15min — borda inferior visível em TODAS as células (cada
+     linha é 15min). As intensidades sobem em :30 (is-half-hour) e :00 (is-hour). */
+  border-bottom: 1px solid rgba(255,255,255,0.04);
   background: var(--surface);
   position: relative;
   min-height: 26px;
 }
+:root[data-theme="light"] .agenda-cell { border-bottom-color: rgba(0,0,0,0.04); }
 .agenda-cell.is-time {
   background: var(--surface-2);
   color: var(--text-muted);
@@ -1504,9 +1747,15 @@ i[data-lucide]:not([class*=ic-]) { width: 16px; height: 16px; stroke-width: 2; }
 .agenda-cell.is-half { background: var(--surface-2); opacity: 0.5; }
 /* Granularidade de 15min: hora cheia ganha borda superior mais forte;
    :30 fica intermediário; :15/:45 mantêm a borda fina padrão. */
-.agenda-cell.is-hour { border-top: 1px solid var(--border); }
-.agenda-cell.is-half-hour { border-top: 1px dashed rgba(255,255,255,0.04); }
-.agenda-cell.is-lunch { background: repeating-linear-gradient(45deg, var(--surface), var(--surface) 6px, var(--surface-2) 6px, var(--surface-2) 12px); }
+/* Hierarquia visual da grade — 3 níveis pra dar ritmo temporal sem poluir.
+   Aplicam-se na border-TOP (topo do slot que cruza o limite). */
+.agenda-cell.is-half-hour { border-top: 1px solid rgba(255,255,255,0.07); }
+.agenda-cell.is-hour      { border-top: 1px solid rgba(255,255,255,0.18); }
+:root[data-theme="light"] .agenda-cell.is-half-hour { border-top-color: rgba(0,0,0,0.07); }
+:root[data-theme="light"] .agenda-cell.is-hour      { border-top-color: rgba(0,0,0,0.16); }
+/* Almoço — removido o destaque listrado (poluía a grade). Mantemos o
+   horário marcável normalmente, sem cor especial. */
+.agenda-cell.is-lunch { background: var(--surface); }
 .agenda-cell.is-day-header {
   background: var(--surface-2); color: var(--text); font-weight: 600;
   font-size: 11px; padding: 8px 6px; text-align: center;
@@ -1571,9 +1820,11 @@ i[data-lucide]:not([class*=ic-]) { width: 16px; height: 16px; stroke-width: 2; }
 .agenda-block-resize::after {
   content: ''; position: absolute; left: 50%; bottom: 2px; width: 28px; height: 3px;
   transform: translateX(-50%); background: rgba(255,255,255,0.55); border-radius: 2px;
-  transition: background .12s, width .12s;
+  opacity: 0; transition: opacity .12s, background .12s, width .12s;
 }
-.agenda-block-resize:hover::after { background: rgba(255,255,255,1); width: 36px; }
+/* Só aparece quando o usuário passa o mouse sobre o bloco */
+.agenda-block:hover .agenda-block-resize::after { opacity: 1; }
+.agenda-block-resize:hover::after { background: rgba(255,255,255,1); width: 36px; opacity: 1; }
 /* Ações do bloco (editar/excluir) — aparecem no hover, top-right */
 .agenda-block-actions {
   position: absolute; top: 3px; right: 3px;
@@ -1669,10 +1920,47 @@ tr.row-hover-actions:hover .row-actions { opacity: 1; }
 .capacity-user .avatar { width: 36px; height: 36px; font-size: 13px; }
 .capacity-user-name { font-size: 13px; font-weight: 600; }
 .capacity-user-role { font-size: 11px; color: var(--text-muted); }
-.capacity-stats { display: flex; gap: 18px; flex-wrap: wrap; }
+.capacity-stats { display: flex; gap: 18px; flex-wrap: wrap; align-items: stretch; }
 .capacity-stat { display: flex; flex-direction: column; }
 .capacity-stat-value { font-size: 16px; font-weight: 700; }
 .capacity-stat.late .capacity-stat-value { color: var(--danger); }
+/* Separador vertical entre operacional (atrasadas/apontadas) e produção (entregáveis) */
+.capacity-stat-divider {
+  width: 1px; align-self: stretch; min-height: 32px;
+  background: var(--hairline-strong, rgba(255,255,255,0.18));
+  margin: 0 4px;
+}
+
+/* Banner global de produção no workspace — soma de todas as pessoas no período */
+.capacity-prod-banner {
+  margin: 14px 0 22px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, var(--accent-dim), transparent);
+  border: 1px solid rgba(122, 0, 255, 0.25);
+  border-radius: var(--radius);
+}
+.capacity-prod-title {
+  font-size: 11px; font-weight: 700; color: var(--accent-text);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin-bottom: 12px;
+}
+.capacity-prod-stats { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+.capacity-prod-stat { display: flex; flex-direction: column; gap: 2px; }
+.capacity-prod-value { font-size: 24px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.capacity-prod-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.capacity-prod-divider {
+  width: 1px; align-self: stretch; min-height: 40px;
+  background: rgba(122, 0, 255, 0.3);
+  margin: 0 4px;
+}
+
+/* Linha "Atribuir a" no painel de entregáveis do detail */
+.detail-deliverable-attr {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px dashed var(--hairline);
+}
+.detail-deliverable-attr .form-label { white-space: nowrap; }
 .capacity-stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 .capacity-bar-wrap { display: flex; flex-direction: column; gap: 6px; }
 .capacity-bar-track {
@@ -3306,4 +3594,123 @@ body.zen-mode #app { padding: 0; }
   .client-time-row { grid-template-columns: 1fr; gap: 8px; }
   .client-person-row { grid-template-columns: 1fr; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   ─── POLIMENTO VISUAL GLOBAL ─────────────────────────────────
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── 1. Number inputs sem setinhas ─────────────────────────── */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none; margin: 0;
+}
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+
+/* ── 2. Scrollbar customizada — discreta, segue o tema ───── */
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.14) transparent; }
+:root[data-theme="light"] * { scrollbar-color: rgba(0,0,0,0.18) transparent; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.14); border-radius: 6px;
+  border: 2px solid transparent; background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); background-clip: padding-box; border: 2px solid transparent; }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.18); background-clip: padding-box; border: 2px solid transparent; }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.32); background-clip: padding-box; border: 2px solid transparent; }
+
+/* ── 3. Tooltips customizados — substitui title="" nativo ─── */
+.k-tooltip {
+  position: fixed; z-index: 9999; pointer-events: none;
+  background: rgba(20,20,20,0.95); color: #fff;
+  padding: 6px 10px; border-radius: var(--radius-sm);
+  font-size: 12px; font-weight: 500;
+  max-width: 280px; line-height: 1.4;
+  white-space: pre-wrap; word-wrap: break-word;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+  opacity: 0; transform: translate(-50%, -100%) translateY(-6px);
+  transition: opacity .12s var(--ease-out), transform .12s var(--ease-out);
+  letter-spacing: -0.005em;
+}
+.k-tooltip.show { opacity: 1; transform: translate(-50%, -100%) translateY(-10px); }
+.k-tooltip::after {
+  content: ''; position: absolute; left: 50%; bottom: -4px;
+  width: 8px; height: 8px; background: rgba(20,20,20,0.95);
+  transform: translateX(-50%) rotate(45deg);
+}
+:root[data-theme="light"] .k-tooltip { background: #1A1A1A; color: #fff; }
+:root[data-theme="light"] .k-tooltip::after { background: #1A1A1A; }
+
+/* ── 4. Loading state em botões — spinner inline ─────────── */
+.btn.is-loading,
+button.is-loading {
+  pointer-events: none; color: transparent !important; position: relative;
+}
+.btn.is-loading::after,
+button.is-loading::after {
+  content: ''; position: absolute; top: 50%; left: 50%;
+  width: 14px; height: 14px; margin: -7px 0 0 -7px;
+  border: 2px solid currentColor; border-right-color: transparent;
+  border-radius: 50%; color: rgba(255,255,255,0.85);
+  animation: btnSpin .6s linear infinite;
+}
+.btn.is-loading.btn-ghost::after,
+.btn.is-loading.btn-secondary::after { color: var(--text-dim); }
+:root[data-theme="light"] .btn.is-loading::after { color: rgba(255,255,255,0.9); }
+@keyframes btnSpin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+/* ── 5. Floating labels (opt-in via .form-group-float) ─────
+   HTML: <div class="form-group form-group-float">
+           <input class="form-control" id="x" placeholder=" ">
+           <label for="x">Nome do campo</label>
+         </div>
+   Note o placeholder=" " (espaço) — necessário pro :placeholder-shown funcionar. */
+.form-group-float { position: relative; }
+.form-group-float > label.form-label,
+.form-group-float > label {
+  position: absolute; top: 50%; left: 14px;
+  transform: translateY(-50%);
+  pointer-events: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px; font-weight: 400;
+  text-transform: none; letter-spacing: 0;
+  transition: all .15s var(--ease-out);
+  padding: 0 4px; line-height: 1;
+  z-index: 1;
+}
+.form-group-float > .form-control:focus + label,
+.form-group-float > .form-control:not(:placeholder-shown) + label {
+  top: 0;
+  transform: translateY(-50%);
+  font-size: 11px; font-weight: 600;
+  color: var(--accent-text);
+  background: var(--surface);
+  letter-spacing: 0.02em;
+}
+:root[data-theme="light"] .form-group-float > .form-control:focus + label,
+:root[data-theme="light"] .form-group-float > .form-control:not(:placeholder-shown) + label {
+  background: #FFFFFF;
+}
+/* Esconde placeholder visual quando label estiver "lá em cima" */
+.form-group-float > .form-control::placeholder { color: transparent; }
+.form-group-float > .form-control:not(:focus)::placeholder { color: transparent; }
+
+/* ── 6. Confirm modal com ícone tematizado ──────────────── */
+.confirm-icon {
+  width: 48px; height: 48px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-bottom: 14px; flex-shrink: 0;
+}
+.confirm-icon.is-danger  { background: rgba(239,80,80,0.15); color: var(--danger); }
+.confirm-icon.is-warn    { background: rgba(245,167,24,0.15); color: var(--warn); }
+.confirm-icon.is-info    { background: var(--accent-dim); color: var(--accent-text); }
+.confirm-icon.is-success { background: rgba(60,227,160,0.15); color: var(--success); }
+.confirm-icon svg, .confirm-icon i { width: 24px; height: 24px; stroke-width: 2; }
+@keyframes confirmIconPop {
+  0%   { transform: scale(0.6); opacity: 0; }
+  60%  { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); }
+}
+.confirm-icon { animation: confirmIconPop .26s var(--ease-spring); }
 

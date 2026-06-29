@@ -266,6 +266,7 @@
                     <th style="cursor:pointer" onclick="sortList('owner')">Responsável <i data-lucide="chevrons-up-down" class="ic-xs"></i></th>
                     <th style="cursor:pointer" onclick="sortList('deadline')">Prazo da etapa <i data-lucide="chevrons-up-down" class="ic-xs"></i></th>
                     <th style="cursor:pointer" onclick="sortList('priority')">Prioridade <i data-lucide="chevrons-up-down" class="ic-xs"></i></th>
+                    <th style="cursor:pointer" onclick="sortList('qty')" title="Peças · Artes · Variações">Entregáveis <i data-lucide="chevrons-up-down" class="ic-xs"></i></th>
                     <th style="cursor:pointer" onclick="sortList('completed')">Concluído em <i data-lucide="chevrons-up-down" class="ic-xs"></i></th>
                   </tr>
                 </thead>
@@ -313,6 +314,7 @@
                 <th style="cursor:pointer" onclick="sortMine('name')">Demanda <i data-lucide="chevrons-up-down" class="ic-xs"></i></th>
                 <th style="cursor:pointer" onclick="sortMine('project')">Projeto <i data-lucide="chevrons-up-down" class="ic-xs"></i></th>
                 <th style="cursor:pointer" onclick="sortMine('status')">Status <i data-lucide="chevrons-up-down" class="ic-xs"></i></th>
+                <th title="Peças · Artes · Variações">Entregáveis</th>
                 <th style="cursor:pointer" onclick="sortMine('deadline')">Prazo <i data-lucide="chevrons-up-down" class="ic-xs"></i></th>
               </tr>
             </thead>
@@ -454,11 +456,13 @@
               <input class="filter-input filter-input--with-icon" id="client-search" placeholder="Buscar cliente…" oninput="renderClients()">
             </div>
             <select class="filter-select" id="client-f-ws" onchange="renderClients()"><option value="">Todos os workspaces</option></select>
-            <span style="font-size:12px;color:var(--text-muted);margin-left:6px">Situação</span>
-            <div class="client-status-toggle">
-              <button class="btn btn-ghost btn-sm client-status-btn active" data-status="all" onclick="setClientStatusFilter('all')">Todos</button>
-              <button class="btn btn-ghost btn-sm client-status-btn" data-status="active" onclick="setClientStatusFilter('active')">Ativos</button>
-              <button class="btn btn-ghost btn-sm client-status-btn" data-status="archived" onclick="setClientStatusFilter('archived')">Arquivados</button>
+            <div class="filter-group-label">
+              <span class="filter-group-label-text">Situação</span>
+              <div class="client-status-toggle">
+                <button class="btn btn-ghost btn-sm client-status-btn active" data-status="all" onclick="setClientStatusFilter('all')">Todos</button>
+                <button class="btn btn-ghost btn-sm client-status-btn" data-status="active" onclick="setClientStatusFilter('active')">Ativos</button>
+                <button class="btn btn-ghost btn-sm client-status-btn" data-status="archived" onclick="setClientStatusFilter('archived')">Arquivados</button>
+              </div>
             </div>
             <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openClientModal()"><i data-lucide="plus" class="ic-sm"></i> Novo Cliente</button>
           </div>
@@ -573,10 +577,12 @@
               <input class="filter-input filter-input--with-icon" id="flow-detail-search" placeholder="Buscar fluxo…" oninput="renderClientFlows(currentClientView)">
             </div>
             <select class="filter-select" id="flow-detail-type" onchange="renderClientFlows(currentClientView)"><option value="">Todos os tipos</option></select>
-            <span style="font-size:12px;color:var(--text-muted);margin-left:6px">Ordenar</span>
-            <button class="btn btn-ghost btn-sm flow-sort-btn" data-sort="name" onclick="setClientFlowSort('name')">Nome</button>
-            <button class="btn btn-ghost btn-sm flow-sort-btn" data-sort="type" onclick="setClientFlowSort('type')">Tipo</button>
-            <button class="btn btn-ghost btn-sm flow-sort-btn" data-sort="modified" onclick="setClientFlowSort('modified')">Modificação</button>
+            <div class="filter-group-label">
+              <span class="filter-group-label-text">Ordenar</span>
+              <button class="btn btn-ghost btn-sm flow-sort-btn" data-sort="name" onclick="setClientFlowSort('name')">Nome</button>
+              <button class="btn btn-ghost btn-sm flow-sort-btn" data-sort="type" onclick="setClientFlowSort('type')">Tipo</button>
+              <button class="btn btn-ghost btn-sm flow-sort-btn" data-sort="modified" onclick="setClientFlowSort('modified')">Modificação</button>
+            </div>
             <button class="btn btn-primary btn-sm admin-only" style="margin-left:auto" onclick="openFlowModalForClient(currentClientView)"><i data-lucide="plus" class="ic-sm"></i> Novo Fluxo</button>
           </div>
           <div class="section-title" id="flow-detail-breadcrumb" style="margin-bottom:16px"></div>
@@ -766,10 +772,10 @@
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <!-- 1. NOME DA DEMANDA -->
-        <div class="form-group full">
-          <label class="form-label">Nome da Demanda</label>
-          <input class="form-control" id="f-name" placeholder="Ex: Carrossel Instagram – Lançamento">
+        <!-- 1. NOME DA DEMANDA — floating label -->
+        <div class="form-group form-group-float full">
+          <input class="form-control" id="f-name" placeholder=" ">
+          <label for="f-name">Nome da Demanda</label>
         </div>
         <!-- 2. PROJETO | FLUXO -->
         <div class="form-group">
@@ -785,10 +791,10 @@
           <label class="form-label">Descrição</label>
           <textarea class="form-control" id="f-description" rows="5" placeholder="Detalhe o que precisa ser feito, referências, contexto…"></textarea>
         </div>
-        <!-- 4. LINK DO BRIEFING -->
-        <div class="form-group full">
-          <label class="form-label">Link do Briefing</label>
-          <input class="form-control" id="f-briefing" type="url" placeholder="https://drive.google.com/…">
+        <!-- 4. LINK DO BRIEFING — floating label -->
+        <div class="form-group form-group-float full">
+          <input class="form-control" id="f-briefing" type="url" placeholder=" ">
+          <label for="f-briefing">Link do Briefing</label>
         </div>
         <!-- 5. ANEXOS -->
         <div class="form-group full">
@@ -801,6 +807,30 @@
             <button type="button" class="demand-att-btn" onclick="addDemandAttachmentLink('f-attachments-list')"><i data-lucide="link" class="ic-sm"></i><span>Link</span></button>
           </div>
           <div class="demand-att-list" id="f-attachments-list" style="margin-top:10px"></div>
+        </div>
+        <!-- ENTREGÁVEIS (peças, artes, variações + atribuir a) — 4 campos do mesmo tamanho em 1 linha -->
+        <div class="form-group full">
+          <label class="form-label">Entregáveis</label>
+          <div class="qty-grid qty-grid-4">
+            <div class="qty-cell">
+              <input class="form-control" id="f-qty-pieces" type="number" min="0" step="1" placeholder="0">
+              <span class="qty-cell-label">Peças <span class="qty-cell-hint" title="Peças únicas. Ex.: 1 criativo + 1 carrossel = 2">?</span></span>
+            </div>
+            <div class="qty-cell">
+              <input class="form-control" id="f-qty-arts" type="number" min="0" step="1" placeholder="0">
+              <span class="qty-cell-label">Artes <span class="qty-cell-hint" title="Total de artes individuais. Ex.: 1 criativo + carrossel de 3 telas = 4 artes">?</span></span>
+            </div>
+            <div class="qty-cell">
+              <input class="form-control" id="f-qty-variations" type="number" min="0" step="1" placeholder="0">
+              <span class="qty-cell-label">Variações <span class="qty-cell-hint" title="Exportações/formatos. Ex.: 1 criativo em 3 formatos = 3 variações">?</span></span>
+            </div>
+            <div class="qty-cell">
+              <select class="form-control" id="f-deliverable-user">
+                <option value="">— Responsável atual —</option>
+              </select>
+              <span class="qty-cell-label">Atribuir a <span class="qty-cell-hint" title="Quem efetivamente executou as artes. Se vazio, conta pro responsável atual da demanda.">?</span></span>
+            </div>
+          </div>
         </div>
         <!-- 6. PRIORIDADE | RESPONSÁVEL ATUAL -->
         <div class="form-group">
@@ -842,7 +872,7 @@
       </div>
       <div class="client-modal-foot-right">
         <button class="btn btn-ghost" onclick="closeModal('demand-modal')">Cancelar</button>
-        <button class="btn btn-primary" onclick="saveDemand()">Salvar Demanda</button>
+        <button class="btn btn-primary" onclick="withLoading(event, saveDemand)">Salvar Demanda</button>
       </div>
     </div>
   </div>
@@ -865,6 +895,15 @@
       <button class="modal-close" onclick="closeModal('client-modal')"><i data-lucide="x" class="ic-sm"></i></button>
     </div>
     <div class="modal-body">
+      <!-- Onboarding: aparece SÓ no modo Novo Cliente, esconde no Editar -->
+      <div id="c-template-bar" class="client-template-bar" style="display:none">
+        <div class="client-template-bar-icon"><i data-lucide="sparkles" class="ic-sm"></i></div>
+        <div class="client-template-bar-text">
+          <div class="client-template-bar-title">Começar a partir de um modelo</div>
+          <div class="client-template-bar-sub">Cria projetos e fluxos prontos junto com o cliente — 1 clique.</div>
+        </div>
+        <select class="form-control" id="c-template" style="max-width:280px"></select>
+      </div>
       <div class="client-modal-grid">
         <!-- Coluna esquerda: avatar grande -->
         <div class="client-avatar-col">
@@ -920,9 +959,31 @@
         </div>
       </div>
       <div class="client-modal-foot-right">
+        <button class="btn btn-ghost btn-sm" id="c-save-template-btn" onclick="openSaveClientTemplate()" style="display:none" title="Salvar este cliente como modelo reutilizável (projetos + fluxos)"><i data-lucide="bookmark" class="ic-sm"></i> Salvar como modelo</button>
         <button class="btn btn-ghost" onclick="closeModal('client-modal')">Cancelar</button>
         <button class="btn btn-primary" onclick="saveClient()">Salvar Cliente</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: SALVAR CLIENTE COMO MODELO ── -->
+<div class="modal-overlay" id="client-template-save-modal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <div class="modal-title">Salvar como modelo</div>
+      <button class="modal-close" onclick="closeModal('client-template-save-modal')"><i data-lucide="x" class="ic-sm"></i></button>
+    </div>
+    <div class="modal-body">
+      <p style="margin:0 0 14px;font-size:13px;color:var(--text-dim);line-height:1.55" id="c-tpl-save-summary"></p>
+      <div class="form-group full">
+        <label class="form-label">Nome do modelo</label>
+        <input class="form-control" id="c-tpl-save-name" placeholder="Ex: Cliente padrão de Marketing Digital">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('client-template-save-modal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmSaveClientTemplate()">Salvar modelo</button>
     </div>
   </div>
 </div>
@@ -1257,7 +1318,7 @@
       <div class="modal-title" id="confirm-title">Confirmar ação</div>
       <button class="modal-close" onclick="confirmCancel()"><i data-lucide="x" class="ic-sm"></i></button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" style="text-align:center;display:flex;flex-direction:column;align-items:center">
       <div id="confirm-message" style="font-size:13px;line-height:1.6;color:var(--text-dim)"></div>
     </div>
     <div class="modal-footer">

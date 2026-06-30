@@ -3782,6 +3782,106 @@ button.is-loading::after {
 .flow-checklist-item .icon-btn:hover { background: var(--surface-2); color: var(--text); }
 .flow-checklist-item .icon-btn.danger:hover { background: rgba(239,80,80,0.12); color: var(--danger); border-color: var(--danger); }
 
+/* ─── Painel Recorrentes — view tipo to-do ─────────────────
+   Cards agrupados (por cliente/projeto/função/responsável).
+   Cada item tem checkbox grande à esquerda: check = gerar a demanda do mês,
+   já-gerado = link clicável pra demanda. Quick-add row no fim de cada grupo. */
+.rec-todo-wrap { display: flex; flex-direction: column; gap: 18px; }
+.rec-group {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.rec-group-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 18px;
+  background: linear-gradient(to bottom, var(--accent-dim) 0%, transparent 100%), var(--surface);
+  border-bottom: 1px solid var(--hairline);
+  cursor: pointer; user-select: none;
+}
+.rec-group-head .rec-group-chevron {
+  transition: transform .15s; flex-shrink: 0; color: var(--text-muted);
+}
+.rec-group.is-collapsed .rec-group-chevron { transform: rotate(-90deg); }
+.rec-group.is-collapsed .rec-group-body { display: none; }
+.rec-group-title { font-size: 14px; font-weight: 700; color: var(--text); flex: 1; }
+.rec-group-count {
+  font-size: 11px; color: var(--text-muted);
+  background: var(--surface-2); padding: 2px 8px; border-radius: var(--radius-pill);
+}
+.rec-group-count.has-pending {
+  color: var(--warn); background: rgba(245,158,11,0.12);
+}
+.rec-group-count.all-done {
+  color: var(--success); background: rgba(34,197,94,0.12);
+}
+.rec-group-body { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 2px; }
+
+.rec-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px; border-radius: var(--radius-sm);
+  transition: background .12s;
+}
+.rec-item:hover { background: var(--surface-2); }
+.rec-item.is-inactive { opacity: 0.45; }
+.rec-item.is-done .rec-item-name { color: var(--text-dim); text-decoration: line-through; text-decoration-color: var(--text-muted); }
+
+.rec-check {
+  width: 22px; height: 22px; flex-shrink: 0;
+  background: transparent; border: 1.5px solid var(--text-muted);
+  border-radius: 6px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  color: #fff; transition: all .12s var(--ease-spring);
+}
+.rec-check:hover { border-color: var(--accent); transform: scale(1.08); }
+.rec-check.is-done { background: var(--success); border-color: var(--success); }
+.rec-check.is-done svg { display: block; }
+.rec-check svg { display: none; }
+.rec-check[disabled] { cursor: not-allowed; opacity: 0.5; }
+
+.rec-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.rec-item-name {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rec-item-meta {
+  font-size: 11px; color: var(--text-muted);
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.rec-item-meta .rec-meta-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.rec-item-meta .rec-meta-sep { opacity: .4; }
+.rec-item-meta a { color: var(--success); text-decoration: none; font-weight: 600; }
+.rec-item-meta a:hover { text-decoration: underline; }
+
+.rec-item-actions {
+  display: flex; gap: 4px; opacity: 0; transition: opacity .12s;
+  flex-shrink: 0;
+}
+.rec-item:hover .rec-item-actions { opacity: 1; }
+.rec-item-actions .detail-icon-btn { width: 28px; height: 28px; }
+
+.rec-quick-add {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  color: var(--text-muted); font-size: 13px;
+  border-top: 1px dashed var(--hairline); margin-top: 4px;
+  cursor: pointer; transition: color .12s, background .12s;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+.rec-quick-add:hover { color: var(--accent); background: var(--surface-2); }
+
+.rec-empty-group {
+  font-size: 12px; color: var(--text-muted); font-style: italic;
+  padding: 10px 14px;
+}
+
+/* Light mode polish */
+:root[data-theme="light"] .rec-group { background: #FFFFFF; }
+:root[data-theme="light"] .rec-item:hover { background: #FAFAFA; }
+
 /* ── 6. Confirm modal com ícone tematizado ──────────────── */
 .confirm-icon {
   width: 48px; height: 48px; border-radius: 50%;

@@ -190,6 +190,7 @@ function migrate() {
   if (!Array.isArray(db.clients)) db.clients = [];
   if (!Array.isArray(db.schedules)) db.schedules = [];
   if (!Array.isArray(db.clientTemplates)) db.clientTemplates = [];
+  if (!Array.isArray(db.recurrings)) db.recurrings = [];
   db.projects.forEach(p => { if (!p.workspaceId) p.workspaceId = defWs; });
 
   // Migração: promover `project.client` (string) → entidade Client.
@@ -2801,6 +2802,189 @@ app.delete('/api/schedules/:id', requireAuth, (req, res) => {
   removeEntity('schedules', s.id);
   broadcastChange('schedule', 'delete', { id: s.id, workspaceId: wsId, byUserId: req.user.id });
   res.json({ ok: true });
+});
+
+/* ── RECURRINGS (demandas recorrentes mensais) ──
+   Cada recurring é um "molde" que o usuário instancia mensalmente como demanda real.
+   Não auto-gera: requer ação explícita do usuário (botão Gerar agora ou bulk
+   "Gerar todas pendentes do mês"). Histórico em generations[{ym,demandId,createdAt}]
+   permite re-gerar de meses passados (admin) e impede duplicata no mesmo mês. */
+function getRecurring(id) { return db.recurrings.find(r => r.id === id); }
+function canEditRecurring(user, r) {
+  return user.isAdmin || r.createdBy === user.id;
+}
+function sanitizeRecurringBody(b, existing) {
+  const cur = existing || {};
+  const name = String(b.name ?? cur.name ?? '').trim();
+  if (!name) return { error: 'Nome é obrigatório' };
+  // Projeto define o workspace e o cliente (validados a seguir)
+  const project = db.projects.find(p => p.id === (b.projectId ?? cur.projectId));
+  if (!project) return { error: 'Projeto inválido' };
+  const flow = db.flows.find(f => f.id === (b.flowId ?? cur.flowId) && f.workspaceId === project.workspaceId);
+  if (!flow) return { error: 'Fluxo inválido pro projeto selecionado' };
+  // clientId: tenta inferir do projeto se não vier
+  const clientId = (b.clientId !== undefined ? b.clientId : cur.clientId) || project.clientId || null;
+  const roleId = (b.roleId !== undefined ? b.roleId : cur.roleId) || null;
+  const ownerId = (b.ownerId !== undefined ? b.ownerId : cur.ownerId) || null;
+  const deliverableUserId = (b.deliverableUserId !== undefined ? b.deliverableUserId : cur.deliverableUserId) || null;
+  const dayOfMonth = Number.isInteger(Number(b.dayOfMonth)) && Number(b.dayOfMonth) >= 1 && Number(b.dayOfMonth) <= 31
+    ? Number(b.dayOfMonth) : (cur.dayOfMonth || null);
+  return {
+    name,
+    workspaceId: project.workspaceId,
+    clientId, projectId: project.id, flowId: flow.id,
+    roleId, ownerId, deliverableUserId,
+    description: String(b.description ?? cur.description ?? ''),
+    briefing: normalizeUrlSrv(b.briefing ?? cur.briefing ?? ''),
+    priority: [1,2,3,4].includes(Number(b.priority ?? cur.priority)) ? Number(b.priority ?? cur.priority) : 3,
+    qtyPieces:     Number(b.qtyPieces ?? cur.qtyPieces) > 0     ? Math.floor(Number(b.qtyPieces ?? cur.qtyPieces)) : 0,
+    qtyArts:       Number(b.qtyArts ?? cur.qtyArts) > 0         ? Math.floor(Number(b.qtyArts ?? cur.qtyArts)) : 0,
+    qtyVariations: Number(b.qtyVariations ?? cur.qtyVariations) > 0 ? Math.floor(Number(b.qtyVariations ?? cur.qtyVariations)) : 0,
+    defaultChecklist: sanitizeChecklistTemplate(b.defaultChecklist !== undefined ? b.defaultChecklist : cur.defaultChecklist),
+    attachments: sanitizeAttachments(b.attachments !== undefined ? b.attachments : cur.attachments),
+    dayOfMonth,
+    active: b.active !== undefined ? !!b.active : (cur.active !== undefined ? cur.active : true)
+  };
+}
+
+app.get('/api/recurrings', requireAuth, (req, res) => {
+  const ids = wsIdsFor(req.user);
+  const clientId = req.query.clientId || null;
+  const projectId = req.query.projectId || null;
+  const roleId = req.query.roleId || null;
+  const userId = req.query.userId || null;
+  const list = db.recurrings.filter(r => {
+    if (!ids.includes(r.workspaceId)) return false;
+    if (clientId && r.clientId !== clientId) return false;
+    if (projectId && r.projectId !== projectId) return false;
+    if (roleId && r.roleId !== roleId) return false;
+    if (userId && r.ownerId !== userId) return false;
+    return true;
+  });
+  res.json(list);
+});
+
+app.post('/api/recurrings', requireAuth, (req, res) => {
+  const fields = sanitizeRecurringBody(req.body || {});
+  if (fields.error) return res.status(400).json({ error: fields.error });
+  if (!canAccessWs(req.user, fields.workspaceId)) return res.status(403).json({ error: 'Sem acesso ao workspace' });
+  const r = {
+    id: uid(),
+    ...fields,
+    generations: [],
+    createdAt: nowISO(),
+    createdBy: req.user.id,
+    updatedAt: nowISO()
+  };
+  db.recurrings.push(r);
+  saveEntity('recurrings', r);
+  broadcastChange('recurring', 'create', { id: r.id, workspaceId: r.workspaceId, byUserId: req.user.id });
+  res.status(201).json(r);
+});
+
+app.put('/api/recurrings/:id', requireAuth, (req, res) => {
+  const r = getRecurring(req.params.id);
+  if (!r || !canAccessWs(req.user, r.workspaceId)) return res.status(404).json({ error: 'Recorrente não encontrado' });
+  if (!canEditRecurring(req.user, r)) return res.status(403).json({ error: 'Sem permissão pra editar este recorrente' });
+  const fields = sanitizeRecurringBody(req.body || {}, r);
+  if (fields.error) return res.status(400).json({ error: fields.error });
+  if (!canAccessWs(req.user, fields.workspaceId)) return res.status(403).json({ error: 'Sem acesso ao workspace destino' });
+  Object.assign(r, fields, { updatedAt: nowISO() });
+  saveEntity('recurrings', r);
+  broadcastChange('recurring', 'update', { id: r.id, workspaceId: r.workspaceId, byUserId: req.user.id });
+  res.json(r);
+});
+
+app.delete('/api/recurrings/:id', requireAuth, (req, res) => {
+  const r = getRecurring(req.params.id);
+  if (!r) return res.status(404).json({ error: 'Recorrente não encontrado' });
+  if (!canEditRecurring(req.user, r)) return res.status(403).json({ error: 'Sem permissão pra excluir este recorrente' });
+  const wsId = r.workspaceId;
+  db.recurrings = db.recurrings.filter(x => x.id !== r.id);
+  removeEntity('recurrings', r.id);
+  broadcastChange('recurring', 'delete', { id: r.id, workspaceId: wsId, byUserId: req.user.id });
+  res.json({ ok: true });
+});
+
+// Gera demanda real a partir de um recorrente, marcando o mês como gerado.
+// Body: { ym: 'YYYY-MM' } (default = mês corrente). Idempotente por (recurringId, ym).
+app.post('/api/recurrings/:id/generate', requireAuth, (req, res) => {
+  const r = getRecurring(req.params.id);
+  if (!r || !canAccessWs(req.user, r.workspaceId)) return res.status(404).json({ error: 'Recorrente não encontrado' });
+  if (!r.active) return res.status(400).json({ error: 'Recorrente inativo' });
+  const ym = String(req.body?.ym || '').match(/^\d{4}-\d{2}$/) ? req.body.ym : new Date().toISOString().slice(0,7);
+  const already = (r.generations || []).find(g => g.ym === ym);
+  if (already) {
+    const existing = db.demands.find(d => d.id === already.demandId);
+    if (existing) return res.json({ ok: true, demand: existing, alreadyGenerated: true });
+    // Demanda foi excluída — limpa o registro pra permitir nova geração
+    r.generations = r.generations.filter(g => g.ym !== ym);
+  }
+  const project = db.projects.find(p => p.id === r.projectId);
+  const flow = db.flows.find(f => f.id === r.flowId);
+  if (!project || !flow) return res.status(400).json({ error: 'Projeto ou fluxo do recorrente não existe mais' });
+  const stage = flow.stages[0];
+  if (!stage) return res.status(400).json({ error: 'Fluxo sem etapas' });
+  // deadline = dia do mês solicitado (se dayOfMonth presente)
+  const [y, m] = ym.split('-').map(Number);
+  let deadline = null;
+  if (r.dayOfMonth) {
+    const lastDay = new Date(y, m, 0).getDate();
+    const day = Math.min(r.dayOfMonth, lastDay);
+    deadline = `${ym}-${String(day).padStart(2,'0')}`;
+  }
+  const stageDue = stage.deadlineDays ? addDays(today(), stage.deadlineDays) : deadline;
+  const initialChecklist = (r.defaultChecklist || []).map(it => ({
+    id: uid(), text: String(it.text || '').trim(),
+    done: false, doneBy: null, doneAt: null,
+    createdBy: req.user.id, createdAt: nowISO()
+  })).filter(it => it.text);
+  const d = {
+    id: uid(), workspaceId: project.workspaceId, projectId: project.id,
+    flowId: flow.id, name: r.name,
+    description: r.description || '',
+    briefing: r.briefing || '',
+    deadline,
+    estimatedHours: null,
+    priority: r.priority || 3,
+    qtyPieces: r.qtyPieces || 0,
+    qtyArts: r.qtyArts || 0,
+    qtyVariations: r.qtyVariations || 0,
+    deliverableUserId: r.deliverableUserId || null,
+    status: stage.id,
+    ownerId: r.ownerId || resolveStageOwner(stage, project) || null,
+    stageEnteredAt: nowISO(), stageDueDate: stageDue,
+    stageHistory: [{ stageId: stage.id, enteredAt: nowISO(), dueDate: stageDue }],
+    timeEntries: [], comments: [], history: [],
+    checklist: initialChecklist,
+    attachments: (r.attachments || []).slice(),
+    recurrence: null,
+    createdAt: nowISO(),
+    completedAt: null,
+    recurringId: r.id,
+    recurringYm: ym
+  };
+  addHistory(d, req.user.id, 'created', { demandName: d.name, fromRecurring: r.id });
+  if (d.ownerId) addHistory(d, req.user.id, 'owner_set', { ownerId: d.ownerId });
+  db.demands.push(d);
+  if (d.ownerId && d.ownerId !== req.user.id) {
+    notify(d.ownerId, 'assigned', { demandId: d.id, demandName: d.name, stageName: stage.label }, req.user.id, appBaseUrl(req));
+  }
+  // Marca como gerado
+  r.generations = r.generations || [];
+  r.generations.push({ ym, demandId: d.id, createdAt: nowISO(), createdBy: req.user.id });
+  r.updatedAt = nowISO();
+  saveEntity('recurrings', r);
+  saveDB();
+  const reqBase = appBaseUrl(req);
+  fireWebhook('demand.created', () => ({
+    demand: d, project, flow, stage, user: req.user,
+    owner: db.users.find(u => u.id === d.ownerId),
+    appBaseUrl: reqBase
+  }));
+  broadcastChange('demand', 'create', { id: d.id, workspaceId: d.workspaceId, byUserId: req.user.id });
+  broadcastChange('recurring', 'update', { id: r.id, workspaceId: r.workspaceId, byUserId: req.user.id });
+  res.status(201).json({ ok: true, demand: d, recurring: r });
 });
 
 /* ── WEBHOOKS ── */

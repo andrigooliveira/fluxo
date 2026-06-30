@@ -20,6 +20,7 @@ let templates  = [];
 let webhooks   = [];
 let schedules  = [];
 let clientTemplates = [];
+let recurrings = [];
 let notifPollTimer = null;
 
 let activeWs   = localStorage.getItem('fluxo_ws') || null;
@@ -75,6 +76,7 @@ const PAGE_TO_PATH = {
   capacity:     '/capacity',
   agenda:       '/agenda',
   templates:    '/templates',
+  recurring:    '/recurring',
   clients:      '/clients',
   projects:     '/projects',
   flows:        '/flows',
@@ -117,6 +119,8 @@ function parseRoute(path) {
   if ((m = p.match(/^\/users\/([^/]+)$/)))                  return { page: 'users',        modal: 'user',    op: 'edit', id: m[1] };
   if ((m = p.match(/^\/integrations\/webhooks\/new$/)))     return { page: 'integrations', modal: 'webhook', op: 'new' };
   if ((m = p.match(/^\/integrations\/webhooks\/([^/]+)$/))) return { page: 'integrations', modal: 'webhook', op: 'edit', id: m[1] };
+  if ((m = p.match(/^\/recurring\/new$/)))                  return { page: 'recurring',    modal: 'recurring', op: 'new' };
+  if ((m = p.match(/^\/recurring\/([^/]+)$/)))              return { page: 'recurring',    modal: 'recurring', op: 'edit', id: m[1] };
   return { page: 'dashboard' };
 }
 function applyRoute() {
@@ -132,7 +136,7 @@ function applyRoute() {
     else renderCurrent();
     // 2) Fecha qualquer modal roteado aberto (modais transitórios como
     //    confirm/prompt/picker/cmdk ficam intactos).
-    const ROUTED = ['detail-modal','demand-modal','project-modal','flow-modal','user-modal','webhook-modal'];
+    const ROUTED = ['detail-modal','demand-modal','project-modal','flow-modal','user-modal','webhook-modal','recurring-modal'];
     document.querySelectorAll('.modal-overlay.open').forEach(m => {
       if (ROUTED.includes(m.id)) m.classList.remove('open');
     });
@@ -160,6 +164,8 @@ function applyRoute() {
       if (typeof openUserModal === 'function') openUserModal(r.op === 'edit' ? r.id : null);
     } else if (r.modal === 'webhook' && me?.isAdmin) {
       if (typeof openWebhookModal === 'function') openWebhookModal(r.op === 'edit' ? r.id : null);
+    } else if (r.modal === 'recurring') {
+      if (typeof openRecurringModal === 'function') openRecurringModal(r.op === 'edit' ? r.id : null);
     }
   } finally {
     _routerSilent = false;
@@ -1852,9 +1858,10 @@ async function loadAll() {
     api('/flows'), api('/demands'), api('/roles'), api('/templates'),
     api('/webhooks').catch(() => []),
     api('/schedules').catch(() => []),
-    api('/client-templates').catch(() => [])
+    api('/client-templates').catch(() => []),
+    api('/recurrings').catch(() => [])
   ]);
-  [workspaces, users, clients, projects, flows, demands, roles, templates, webhooks, schedules, clientTemplates] = results;
+  [workspaces, users, clients, projects, flows, demands, roles, templates, webhooks, schedules, clientTemplates, recurrings] = results;
   const allowed = workspaces.map(w => w.id);
   if (!activeWs || !allowed.includes(activeWs)) activeWs = allowed[0] || null;
   localStorage.setItem('fluxo_ws', activeWs || '');
@@ -1928,7 +1935,8 @@ const PAGE_TITLES = {
   dashboard: 'Dashboard', list: 'Demandas', mine: 'Minhas Demandas',
   clients: 'Clientes', projects: 'Projetos', flows: 'Fluxos de Demanda',
   workspaces: 'Workspaces', users: 'Usuários', profile: 'Meu Perfil',
-  capacity: 'Capacidade', templates: 'Templates', integrations: 'Integrações', agenda: 'Agenda'
+  capacity: 'Capacidade', templates: 'Templates', integrations: 'Integrações', agenda: 'Agenda',
+  recurring: 'Recorrentes'
 };
 function goPage(page) {
   currentPage = page;
@@ -1968,6 +1976,7 @@ function renderCurrent() {
     case 'capacity':   renderCapacity(); break;
     case 'agenda':     renderAgenda(); break;
     case 'templates':  renderTemplates(); break;
+    case 'recurring':  renderRecurring(); break;
     case 'integrations': renderIntegrations(); break;
     case 'clients': {
       // Decide entre grid e detalhe sem perder estado quando refreshData() roda
@@ -6635,6 +6644,443 @@ async function processDroppedFiles(files, listElementId) {
   }
 }
 
+/* ─── DEMANDAS RECORRENTES (mensais) ───
+   Painel separado pra moldes que viram demandas mensalmente. Não auto-gera —
+   o usuário escolhe o mês e clica em "Gerar" por linha ou em bulk.
+   Estado de geração vive no próprio recurring (generations[{ym,demandId}]). */
+let editingRecurringId = null;
+let recurringChecklistDraft = [];
+
+function currentYm() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+function ymLabel(ym) {
+  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return ym || '';
+  const [y, m] = ym.split('-').map(Number);
+  return MONTHS[m - 1] + '/' + y;
+}
+function recurringGenerationFor(r, ym) {
+  return (r.generations || []).find(g => g.ym === ym) || null;
+}
+
+// Persistência: lembra quais grupos o usuário fechou
+const _recCollapsed = new Set(JSON.parse(localStorage.getItem('kastor-rec-collapsed') || '[]'));
+function _persistRecCollapsed() {
+  try { localStorage.setItem('kastor-rec-collapsed', JSON.stringify([..._recCollapsed])); } catch {}
+}
+function toggleRecGroup(key) {
+  if (_recCollapsed.has(key)) _recCollapsed.delete(key);
+  else _recCollapsed.add(key);
+  _persistRecCollapsed();
+  // Toggle visual sem re-render
+  const el = document.querySelector(`.rec-group[data-key="${CSS.escape(key)}"]`);
+  if (el) el.classList.toggle('is-collapsed');
+}
+
+function renderRecurring() {
+  // Garante mês default no input
+  const ymInput = $('rec-ym');
+  if (ymInput && !ymInput.value) ymInput.value = currentYm();
+  const ym = ymInput?.value || currentYm();
+
+  // Popula filtros
+  const wsClients = clients.filter(c => c.workspaceId === activeWs && c.active !== false);
+  const wsProjects = projects.filter(p => p.workspaceId === activeWs && p.active !== false);
+  const wsUsersList = wsUsers();
+  fillSelect($('rec-f-client'), wsClients.map(c => ({ value: c.id, label: c.name })), undefined, 'Todos os clientes');
+  fillSelect($('rec-f-project'), wsProjects.map(p => ({ value: p.id, label: p.name })), undefined, 'Todos os projetos');
+  fillSelect($('rec-f-role'), roles.map(r => ({ value: r.id, label: r.name })), undefined, 'Todas as funções');
+  fillSelect($('rec-f-user'), wsUsersList.map(u => ({ value: u.id, label: u.name })), undefined, 'Todos os responsáveis');
+
+  const fClient = $('rec-f-client').value;
+  const fProject = $('rec-f-project').value;
+  const fRole = $('rec-f-role').value;
+  const fUser = $('rec-f-user').value;
+  const groupBy = $('rec-group-by').value || 'client';
+
+  const list = recurrings
+    .filter(r => r.workspaceId === activeWs)
+    .filter(r => !fClient || r.clientId === fClient)
+    .filter(r => !fProject || r.projectId === fProject)
+    .filter(r => !fRole || r.roleId === fRole)
+    .filter(r => !fUser || r.ownerId === fUser)
+    .slice()
+    .sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+
+  const wrap = $('recurring-todo-wrap');
+  wrap.className = 'rec-todo-wrap';
+  if (!list.length) {
+    wrap.innerHTML = emptyState(
+      'Nenhuma recorrente cadastrada',
+      'Crie um molde mensal de demanda — depois é só marcar o checkbox no mês desejado.',
+      'default'
+    );
+    paintIcons();
+    return;
+  }
+
+  // Agrupa
+  const groupKeyFor = (r) => {
+    if (groupBy === 'client')  return r.clientId  || '__none__';
+    if (groupBy === 'project') return r.projectId || '__none__';
+    if (groupBy === 'role')    return r.roleId    || '__none__';
+    if (groupBy === 'owner')   return r.ownerId   || '__none__';
+    return '__none__';
+  };
+  const groupLabelFor = (key) => {
+    if (key === '__none__') {
+      if (groupBy === 'role')  return 'Sem função';
+      if (groupBy === 'owner') return 'Sem responsável';
+      return 'Sem grupo';
+    }
+    if (groupBy === 'client')  return clientById(key)?.name  || 'Cliente removido';
+    if (groupBy === 'project') return projectById(key)?.name || 'Projeto removido';
+    if (groupBy === 'role')    return roles.find(x => x.id === key)?.name || 'Função removida';
+    if (groupBy === 'owner')   return userById(key)?.name    || 'Usuário removido';
+    return '';
+  };
+  const groups = new Map();
+  for (const r of list) {
+    const k = groupKeyFor(r);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  const sortedKeys = [...groups.keys()].sort((a, b) => norm(groupLabelFor(a)).localeCompare(norm(groupLabelFor(b))));
+
+  wrap.innerHTML = sortedKeys.map(key => {
+    const items = groups.get(key);
+    const label = groupLabelFor(key);
+    const pending = items.filter(r => r.active !== false && !recurringGenerationFor(r, ym)).length;
+    const total = items.filter(r => r.active !== false).length;
+    const done = total - pending;
+    const groupKey = groupBy + ':' + key;
+    const isCollapsed = _recCollapsed.has(groupKey);
+    // Quick-add pre-fill: passa o context do grupo (cliente/projeto/etc) pro modal
+    const quickAddArgs = JSON.stringify({ [groupBy === 'client' ? 'clientId' : groupBy === 'project' ? 'projectId' : groupBy === 'role' ? 'roleId' : 'ownerId']: key === '__none__' ? null : key });
+    let countClass = '';
+    if (total > 0 && pending === 0) countClass = 'all-done';
+    else if (pending > 0)            countClass = 'has-pending';
+    const countLabel = total > 0 ? `${done}/${total}` : `${items.length}`;
+
+    const itemsHtml = items.map(r => {
+      const inactive = r.active === false;
+      const gen = recurringGenerationFor(r, ym);
+      const d = gen ? demandById(gen.demandId) : null;
+      const isDone = !!gen && !!d;
+      const orphaned = !!gen && !d;
+
+      const p = r.projectId ? projectById(r.projectId) : null;
+      const f = r.flowId ? flowById(r.flowId) : null;
+      const role = r.roleId ? roles.find(x => x.id === r.roleId) : null;
+      const owner = r.ownerId ? userById(r.ownerId) : null;
+
+      // Meta chips — pula o que já é o critério do grupo (evita repetir)
+      const metaChips = [];
+      if (groupBy !== 'project' && p) metaChips.push(`<span class="rec-meta-chip"><i data-lucide="folder" class="ic-xs"></i> ${esc(p.name)}</span>`);
+      if (f)                          metaChips.push(`<span class="rec-meta-chip"><i data-lucide="workflow" class="ic-xs"></i> ${esc(f.name)}</span>`);
+      if (groupBy !== 'role' && role) metaChips.push(`<span class="rec-meta-chip"><i data-lucide="user-cog" class="ic-xs"></i> ${esc(role.name)}</span>`);
+      if (groupBy !== 'owner' && owner) metaChips.push(`<span class="rec-meta-chip"><i data-lucide="user" class="ic-xs"></i> ${esc(owner.name)}</span>`);
+      if (r.dayOfMonth) metaChips.push(`<span class="rec-meta-chip"><i data-lucide="calendar" class="ic-xs"></i> Dia ${r.dayOfMonth}</span>`);
+      if (inactive) metaChips.push(`<span class="rec-meta-chip" style="color:var(--text-dim)">Inativo</span>`);
+      if (isDone) {
+        metaChips.push(`<a href="#" onclick="event.preventDefault();event.stopPropagation();showDetail('${gen.demandId}')">✓ Gerada · abrir demanda</a>`);
+      } else if (orphaned) {
+        metaChips.push(`<span class="rec-meta-chip" style="color:var(--text-dim)">Demanda anterior excluída — clique pra regerar</span>`);
+      }
+
+      const checkTitle = inactive
+        ? 'Inativo — edite pra reativar'
+        : isDone
+          ? 'Já gerada neste mês — abrir demanda'
+          : `Marcar como gerada em ${ymLabel(ym)}`;
+      const checkOnClick = inactive
+        ? ''
+        : isDone
+          ? `showDetail('${gen.demandId}')`
+          : `generateRecurring('${r.id}')`;
+
+      return `<div class="rec-item ${inactive ? 'is-inactive' : ''} ${isDone ? 'is-done' : ''}">
+        <button class="rec-check ${isDone ? 'is-done' : ''}" ${inactive ? 'disabled' : ''} title="${esc(checkTitle)}" onclick="${checkOnClick}">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none"><path d="M3 8.5L6.5 12L13 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="rec-item-body" onclick="openRecurringModal('${r.id}')" style="cursor:pointer">
+          <div class="rec-item-name">${esc(r.name)}</div>
+          ${metaChips.length ? `<div class="rec-item-meta">${metaChips.join('<span class="rec-meta-sep">·</span>')}</div>` : ''}
+        </div>
+        <div class="rec-item-actions">
+          <button class="detail-icon-btn" title="Editar" onclick="event.stopPropagation();openRecurringModal('${r.id}')"><i data-lucide="edit-3" class="ic-sm"></i></button>
+          <button class="detail-icon-btn danger" title="Excluir" onclick="event.stopPropagation();confirmDeleteRecurring('${r.id}')"><i data-lucide="trash-2" class="ic-sm"></i></button>
+        </div>
+      </div>`;
+    }).join('') || `<div class="rec-empty-group">Nenhuma recorrente neste grupo.</div>`;
+
+    return `<div class="rec-group ${isCollapsed ? 'is-collapsed' : ''}" data-key="${esc(groupKey)}">
+      <div class="rec-group-head" onclick="toggleRecGroup('${esc(groupKey)}')">
+        <i data-lucide="chevron-down" class="ic-sm rec-group-chevron"></i>
+        <div class="rec-group-title">${esc(label)}</div>
+        <span class="rec-group-count ${countClass}">${countLabel}</span>
+      </div>
+      <div class="rec-group-body">
+        ${itemsHtml}
+        <div class="rec-quick-add" onclick='openRecurringModalPrefilled(${esc(quickAddArgs)})'>
+          <i data-lucide="plus" class="ic-sm"></i>
+          <span>Adicionar recorrente em ${esc(label)}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  paintIcons();
+}
+
+// Abre modal já com um campo pré-preenchido (vindo do contexto do grupo)
+function openRecurringModalPrefilled(ctx) {
+  openRecurringModal(null);
+  setTimeout(() => {
+    try {
+      if (ctx && typeof ctx === 'object') {
+        if (ctx.clientId)  { $('rec-client').value = ctx.clientId; onRecurringClientChange(); }
+        if (ctx.projectId) {
+          // Se vier projeto, descobre o cliente dele e seleciona ambos
+          const p = projectById(ctx.projectId);
+          if (p && p.clientId) { $('rec-client').value = p.clientId; onRecurringClientChange(); }
+          $('rec-project').value = ctx.projectId;
+          onRecurringProjectChange();
+        }
+        if (ctx.roleId)    $('rec-role').value = ctx.roleId;
+        if (ctx.ownerId)   $('rec-owner').value = ctx.ownerId;
+      }
+    } catch {}
+  }, 80);
+}
+
+function openRecurringModal(id) {
+  editingRecurringId = id || null;
+  $('recurring-modal-title').textContent = id ? 'Editar Recorrente' : 'Nova Recorrente';
+  $('rec-delete-btn').style.display = id ? '' : 'none';
+
+  // Popula selects base (cliente/projeto/fluxo/função/responsável)
+  const wsClientList = clients.filter(c => c.workspaceId === activeWs && c.active !== false)
+    .slice().sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+  $('rec-client').innerHTML = '<option value="">— Selecione —</option>' +
+    wsClientList.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  // Function options já vêm fixas no HTML como "Sem função"; preenche roles
+  $('rec-role').innerHTML = '<option value="">— Sem função —</option>' +
+    roles.slice().sort((a, b) => norm(a.name).localeCompare(norm(b.name)))
+      .map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('');
+  // Responsável: usuários do workspace
+  const wsUsersList = wsUsers().slice().sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+  $('rec-owner').innerHTML = '<option value="">— Sem responsável fixo —</option>' +
+    wsUsersList.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join('');
+  $('rec-deliverable-user').innerHTML = '<option value="">— Responsável atual —</option>' +
+    wsUsersList.map(u => `<option value="${u.id}">${esc(u.name)}</option>`).join('');
+
+  if (id) {
+    const r = recurrings.find(x => x.id === id);
+    if (!r) return toast('Recorrente não encontrado', 'error');
+    $('rec-name').value = r.name || '';
+    $('rec-client').value = r.clientId || '';
+    onRecurringClientChange(); // popula projetos
+    $('rec-project').value = r.projectId || '';
+    onRecurringProjectChange(); // popula fluxos
+    $('rec-flow').value = r.flowId || '';
+    $('rec-role').value = r.roleId || '';
+    $('rec-owner').value = r.ownerId || '';
+    $('rec-dom').value = r.dayOfMonth || '';
+    $('rec-desc').value = r.description || '';
+    $('rec-briefing').value = r.briefing || '';
+    $('rec-qty-pieces').value = r.qtyPieces || '';
+    $('rec-qty-arts').value = r.qtyArts || '';
+    $('rec-qty-variations').value = r.qtyVariations || '';
+    $('rec-deliverable-user').value = r.deliverableUserId || '';
+    $('rec-priority').value = r.priority || 3;
+    $('rec-active').checked = r.active !== false;
+    recurringChecklistDraft = (r.defaultChecklist || []).map(it => ({ text: String(it.text || '') }));
+  } else {
+    // Reset pra criação
+    $('rec-name').value = '';
+    $('rec-client').value = '';
+    onRecurringClientChange();
+    $('rec-flow').innerHTML = '<option value="">— Selecione um projeto primeiro —</option>';
+    $('rec-role').value = '';
+    $('rec-owner').value = '';
+    $('rec-dom').value = '';
+    $('rec-desc').value = '';
+    $('rec-briefing').value = '';
+    $('rec-qty-pieces').value = '';
+    $('rec-qty-arts').value = '';
+    $('rec-qty-variations').value = '';
+    $('rec-deliverable-user').value = '';
+    $('rec-priority').value = '3';
+    $('rec-active').checked = true;
+    recurringChecklistDraft = [];
+  }
+  renderRecurringChecklist();
+  openModal('recurring-modal');
+  navPush(id ? '/recurring/' + id : '/recurring/new');
+  setTimeout(() => $('rec-name').focus(), 60);
+}
+
+function onRecurringClientChange() {
+  const cid = $('rec-client').value;
+  const wsProjs = projects.filter(p => p.workspaceId === activeWs && p.active !== false)
+    .filter(p => !cid || p.clientId === cid)
+    .sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+  $('rec-project').innerHTML = '<option value="">— Selecione um projeto —</option>' +
+    wsProjs.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  $('rec-flow').innerHTML = '<option value="">— Selecione um projeto primeiro —</option>';
+}
+function onRecurringProjectChange() {
+  const pid = $('rec-project').value;
+  if (!pid) { $('rec-flow').innerHTML = '<option value="">— Selecione um projeto primeiro —</option>'; return; }
+  const fl = flowsForProject(pid).slice().sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+  $('rec-flow').innerHTML = fl.length
+    ? fl.map(f => `<option value="${f.id}">${esc(f.name)}${f.demandType ? ' · ' + esc(f.demandType) : ''}</option>`).join('')
+    : '<option value="">— Nenhum fluxo disponível —</option>';
+}
+
+function renderRecurringChecklist() {
+  const wrap = $('rec-checklist-list');
+  if (!wrap) return;
+  wrap.innerHTML = recurringChecklistDraft.map((it, i) => `
+    <div class="flow-checklist-item">
+      <input class="form-control" value="${esc(it.text)}" placeholder="Item do checklist" oninput="recurringChecklistDraft[${i}].text=this.value">
+      <button type="button" class="icon-btn danger" title="Remover" onclick="removeRecurringChecklistItem(${i})"><i data-lucide="x" class="ic-sm"></i></button>
+    </div>`).join('');
+  paintIcons();
+}
+function addRecurringChecklistItem() {
+  recurringChecklistDraft.push({ text: '' });
+  renderRecurringChecklist();
+  const inputs = $('rec-checklist-list').querySelectorAll('input.form-control');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+function removeRecurringChecklistItem(i) {
+  recurringChecklistDraft.splice(i, 1);
+  renderRecurringChecklist();
+}
+
+async function saveRecurring() {
+  const name = $('rec-name').value.trim();
+  if (!name) return toast('Nome é obrigatório', 'error');
+  const projectId = $('rec-project').value;
+  if (!projectId) return toast('Selecione um projeto', 'error');
+  const flowId = $('rec-flow').value;
+  if (!flowId) return toast('Selecione um fluxo', 'error');
+  const body = {
+    name,
+    clientId: $('rec-client').value || null,
+    projectId,
+    flowId,
+    roleId: $('rec-role').value || null,
+    ownerId: $('rec-owner').value || null,
+    deliverableUserId: $('rec-deliverable-user').value || null,
+    description: $('rec-desc').value || '',
+    briefing: $('rec-briefing').value || '',
+    priority: Number($('rec-priority').value) || 3,
+    qtyPieces: Number($('rec-qty-pieces').value) || 0,
+    qtyArts: Number($('rec-qty-arts').value) || 0,
+    qtyVariations: Number($('rec-qty-variations').value) || 0,
+    dayOfMonth: $('rec-dom').value ? Number($('rec-dom').value) : null,
+    active: $('rec-active').checked,
+    defaultChecklist: recurringChecklistDraft.filter(it => (it.text || '').trim()).map(it => ({ text: it.text.trim() }))
+  };
+  try {
+    if (editingRecurringId) await api('/recurrings/' + editingRecurringId, 'PUT', body);
+    else await api('/recurrings', 'POST', body);
+    closeModal('recurring-modal');
+    navPush('/recurring');
+    toast(editingRecurringId ? 'Recorrente atualizada!' : 'Recorrente criada!');
+    await refreshData();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteRecurring() {
+  if (!editingRecurringId) return;
+  const r = recurrings.find(x => x.id === editingRecurringId);
+  if (!r) return;
+  const ok = await showConfirm({
+    title: 'Excluir recorrente',
+    message: `Excluir o molde <strong>${esc(r.name)}</strong>?<br><br>As demandas já geradas <strong>não</strong> serão removidas.`,
+    okLabel: 'Excluir',
+    danger: true
+  });
+  if (!ok) return;
+  try {
+    await api('/recurrings/' + editingRecurringId, 'DELETE');
+    closeModal('recurring-modal');
+    navPush('/recurring');
+    toast('Recorrente excluída.', 'warn');
+    await refreshData();
+  } catch (e) { toast(e.message, 'error'); }
+}
+async function confirmDeleteRecurring(id) {
+  const r = recurrings.find(x => x.id === id); if (!r) return;
+  const ok = await showConfirm({
+    title: 'Excluir recorrente',
+    message: `Excluir o molde <strong>${esc(r.name)}</strong>?<br><br>As demandas já geradas <strong>não</strong> serão removidas.`,
+    okLabel: 'Excluir',
+    danger: true
+  });
+  if (!ok) return;
+  try {
+    await api('/recurrings/' + id, 'DELETE');
+    toast('Recorrente excluída.', 'warn');
+    await refreshData();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function generateRecurring(id) {
+  const r = recurrings.find(x => x.id === id);
+  if (!r) return;
+  const ym = $('rec-ym').value || currentYm();
+  const existing = recurringGenerationFor(r, ym);
+  if (existing) {
+    const ok = await showConfirm({
+      title: 'Regerar demanda do mês',
+      message: `Já existe uma demanda gerada em <strong>${ymLabel(ym)}</strong> para "<strong>${esc(r.name)}</strong>".<br><br>A demanda anterior continua existindo. Deseja criar outra?`,
+      okLabel: 'Regerar'
+    });
+    if (!ok) return;
+    // Backend só re-gera se a demanda foi excluída — então só prossigo se existing.demandId não existe mais
+    if (demandById(existing.demandId)) return toast('Demanda já existe — abra pelo link na tabela.', 'warn');
+  }
+  try {
+    const res = await api('/recurrings/' + id + '/generate', 'POST', { ym });
+    toast(res.alreadyGenerated ? 'Demanda já existia.' : 'Demanda gerada!');
+    await refreshData();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function generateAllRecurringPending() {
+  const ym = $('rec-ym').value || currentYm();
+  const fClient = $('rec-f-client').value;
+  const fProject = $('rec-f-project').value;
+  const fRole = $('rec-f-role').value;
+  const fUser = $('rec-f-user').value;
+  const pending = recurrings
+    .filter(r => r.workspaceId === activeWs && r.active !== false)
+    .filter(r => !fClient || r.clientId === fClient)
+    .filter(r => !fProject || r.projectId === fProject)
+    .filter(r => !fRole || r.roleId === fRole)
+    .filter(r => !fUser || r.ownerId === fUser)
+    .filter(r => !recurringGenerationFor(r, ym));
+  if (!pending.length) return toast('Nenhuma recorrente pendente neste mês.', 'warn');
+  const ok = await showConfirm({
+    title: 'Gerar todas pendentes',
+    message: `Serão geradas <strong>${pending.length}</strong> demanda(s) referentes a <strong>${ymLabel(ym)}</strong>.<br><br>Continuar?`,
+    okLabel: 'Gerar todas'
+  });
+  if (!ok) return;
+  let ok_count = 0, errs = 0;
+  for (const r of pending) {
+    try { await api('/recurrings/' + r.id + '/generate', 'POST', { ym }); ok_count++; }
+    catch { errs++; }
+  }
+  toast(`${ok_count} demanda(s) geradas${errs ? `, ${errs} falha(s)` : ''}.`, errs ? 'warn' : 'success');
+  await refreshData();
+}
+
 function renderTemplates() {
   const list = templates.filter(t => t.workspaceId === activeWs).slice().sort((a, b) => {
     let va, vb;
@@ -8312,6 +8758,7 @@ async function flushSseRefetch() {
     if (entity === 'client')   tasks.push(api('/clients').then(c => { clients = c; }).catch(()=>{}));
     if (entity === 'project')  tasks.push(api('/projects').then(p => { projects = p; }).catch(()=>{}));
     if (entity === 'flow')     tasks.push(api('/flows').then(f => { flows = f; }).catch(()=>{}));
+    if (entity === 'recurring') tasks.push(api('/recurrings').then(r => { recurrings = r; }).catch(()=>{}));
   }
   await Promise.all(tasks);
   // Re-render só o que afeta a página atual — barato e correto

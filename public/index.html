@@ -94,6 +94,10 @@
         <svg viewBox="0 0 16 16" fill="none"><rect x="2.5" y="1.5" width="9" height="13" rx="1" stroke="currentColor" stroke-width="1.5"/><path d="M5 5h4M5 8h4M5 11h2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M13.5 3.5v10a1 1 0 01-1 1H11" stroke="currentColor" stroke-width="1.5"/></svg>
         Templates
       </div>
+      <div class="nav-item" data-page="recurring" onclick="goPage('recurring')">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M3 6a5 5 0 018.5-2.5L13 5M13 10a5 5 0 01-8.5 2.5L3 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 2v3h-3M3 14v-3h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Recorrentes
+      </div>
       <div class="nav-item" data-page="integrations" id="nav-integrations" onclick="goPage('integrations')">
         <svg viewBox="0 0 16 16" fill="none"><path d="M4 8h2.5a2 2 0 002-2V3.5M12 8H9.5a2 2 0 00-2 2v2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="3" cy="8" r="1.5" stroke="currentColor" stroke-width="1.5"/><circle cx="13" cy="8" r="1.5" stroke="currentColor" stroke-width="1.5"/><circle cx="7.5" cy="3.5" r="1.5" stroke="currentColor" stroke-width="1.5"/><circle cx="7.5" cy="12.5" r="1.5" stroke="currentColor" stroke-width="1.5"/></svg>
         Integrações
@@ -422,6 +426,36 @@
             <tbody id="templates-table-body"></tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <!-- ── RECORRENTES (demandas mensais) ── -->
+    <div class="page" id="page-recurring">
+      <div class="page-body">
+        <div class="section-head">
+          <div class="section-title">Demandas Recorrentes</div>
+          <button class="btn btn-primary" onclick="openRecurringModal()"><i data-lucide="plus" class="ic-sm"></i> Nova Recorrente</button>
+        </div>
+        <div class="capacity-hint">Moldes mensais de demandas. Configure cliente, projeto, fluxo, função e responsável uma vez; a cada mês marque como "Gerar" pra instanciar a demanda real.</div>
+        <div class="filters-bar" style="margin-bottom:18px;gap:10px;flex-wrap:wrap">
+          <div class="filter-input-wrap">
+            <i data-lucide="calendar" class="filter-input-icon ic-sm"></i>
+            <input class="filter-input filter-input--with-icon" type="month" id="rec-ym" onchange="renderRecurring()">
+          </div>
+          <select class="filter-select" id="rec-f-client" onchange="renderRecurring()"><option value="">Todos os clientes</option></select>
+          <select class="filter-select" id="rec-f-project" onchange="renderRecurring()"><option value="">Todos os projetos</option></select>
+          <select class="filter-select" id="rec-f-role" onchange="renderRecurring()"><option value="">Todas as funções</option></select>
+          <select class="filter-select" id="rec-f-user" onchange="renderRecurring()"><option value="">Todos os responsáveis</option></select>
+          <select class="filter-select" id="rec-group-by" onchange="renderRecurring()" title="Agrupar por">
+            <option value="client">Agrupar por cliente</option>
+            <option value="project">Agrupar por projeto</option>
+            <option value="role">Agrupar por função</option>
+            <option value="owner">Agrupar por responsável</option>
+          </select>
+          <div style="flex:1"></div>
+          <button class="btn btn-ghost btn-sm" id="rec-bulk-btn" onclick="generateAllRecurringPending()" title="Gera todas as recorrentes que ainda não foram instanciadas neste mês"><i data-lucide="zap" class="ic-sm"></i> Gerar pendentes do mês</button>
+        </div>
+        <div id="recurring-todo-wrap"></div>
       </div>
     </div>
 
@@ -1245,6 +1279,106 @@
         <button class="btn btn-ghost" onclick="attemptCloseModal('flow-modal')">Cancelar</button>
         <button class="btn btn-primary" onclick="saveFlow()">Salvar Fluxo</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: NOVA/EDITAR DEMANDA RECORRENTE -->
+<div class="modal-overlay" id="recurring-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div class="modal-title" id="recurring-modal-title">Nova Recorrente</div>
+      <button class="modal-close" onclick="closeModal('recurring-modal')"><i data-lucide="x" class="ic-sm"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label class="form-label">Nome da Demanda</label>
+          <input class="form-control" id="rec-name" placeholder="Ex.: Posts Instagram do mês">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cliente</label>
+          <select class="form-control" id="rec-client" onchange="onRecurringClientChange()"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Projeto</label>
+          <select class="form-control" id="rec-project" onchange="onRecurringProjectChange()"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fluxo</label>
+          <select class="form-control" id="rec-flow"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Função</label>
+          <select class="form-control" id="rec-role"><option value="">— Sem função —</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Responsável Padrão</label>
+          <select class="form-control" id="rec-owner"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Dia do Mês (opcional)</label>
+          <input class="form-control" id="rec-dom" type="number" min="1" max="31" placeholder="Ex.: 5">
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Descrição</label>
+          <textarea class="form-control" id="rec-desc" rows="4" placeholder="Descrição padrão da demanda ao ser gerada."></textarea>
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Link do Briefing</label>
+          <input class="form-control" id="rec-briefing" type="url" placeholder="https://...">
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Entregáveis</label>
+          <div class="qty-grid qty-grid-4">
+            <div class="qty-cell">
+              <input class="form-control" id="rec-qty-pieces" type="number" min="0" step="1" placeholder="0">
+              <span class="qty-cell-label">Peças</span>
+            </div>
+            <div class="qty-cell">
+              <input class="form-control" id="rec-qty-arts" type="number" min="0" step="1" placeholder="0">
+              <span class="qty-cell-label">Artes</span>
+            </div>
+            <div class="qty-cell">
+              <input class="form-control" id="rec-qty-variations" type="number" min="0" step="1" placeholder="0">
+              <span class="qty-cell-label">Variações</span>
+            </div>
+            <div class="qty-cell">
+              <select class="form-control" id="rec-deliverable-user">
+                <option value="">— Responsável atual —</option>
+              </select>
+              <span class="qty-cell-label">Atribuir a</span>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Prioridade</label>
+          <select class="form-control" id="rec-priority">
+            <option value="1">Imediato</option>
+            <option value="2">Alta</option>
+            <option value="3" selected>Média</option>
+            <option value="4">Baixa</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <label class="flow-apply-toggle" style="height:40px">
+            <input type="checkbox" id="rec-active" checked>
+            <span class="flow-toggle-track"><span class="flow-toggle-thumb"></span></span>
+            <span class="flow-toggle-label">Ativo (aparece na lista de geração mensal)</span>
+          </label>
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Checklist <span class="qty-cell-hint" title="Itens herdados pelo checklist da demanda ao gerar.">?</span></label>
+          <div class="flow-checklist-list" id="rec-checklist-list"></div>
+          <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addRecurringChecklistItem()"><i data-lucide="plus" class="ic-sm"></i> Adicionar item</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="rec-delete-btn" style="display:none;margin-right:auto" onclick="deleteRecurring()">Excluir</button>
+      <button class="btn btn-ghost" onclick="closeModal('recurring-modal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveRecurring()" id="rec-save-btn">Salvar</button>
     </div>
   </div>
 </div>

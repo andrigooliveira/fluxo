@@ -62,10 +62,13 @@
       </div>
     </div>
     <nav class="sidebar-nav">
+      <div class="nav-section">Visão Geral</div>
       <div class="nav-item active" data-page="dashboard" onclick="goPage('dashboard')">
         <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity=".5"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity=".5"/></svg>
         Dashboard
       </div>
+
+      <div class="nav-section">Execução</div>
       <div class="nav-item" data-page="list" onclick="goPage('list')">
         <svg viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         Demandas
@@ -78,6 +81,8 @@
         <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="3.5" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M5 1.5v3M11 1.5v3M2 6.5h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         Agenda
       </div>
+
+      <div class="nav-section">Acompanhamento</div>
       <div class="nav-item" data-page="capacity" onclick="goPage('capacity')">
         <svg viewBox="0 0 16 16" fill="none"><path d="M2 13V8m4 5V5m4 8V3m4 10v-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         Capacidade
@@ -85,6 +90,12 @@
       <div class="nav-item" data-page="clients" onclick="goPage('clients')">
         <svg viewBox="0 0 16 16" fill="none"><path d="M8 8a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 14c.8-2.6 3-4 5.5-4s4.7 1.4 5.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         Clientes
+      </div>
+
+      <div class="nav-section">Processos</div>
+      <div class="nav-item" data-page="recurring" onclick="goPage('recurring')">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M3 6a5 5 0 018.5-2.5L13 5M13 10a5 5 0 01-8.5 2.5L3 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 2v3h-3M3 14v-3h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Recorrentes
       </div>
       <div class="nav-item" data-page="flows" id="nav-flows" onclick="goPage('flows')">
         <svg viewBox="0 0 16 16" fill="none"><circle cx="3" cy="8" r="1.8" stroke="currentColor" stroke-width="1.5"/><circle cx="13" cy="3.5" r="1.8" stroke="currentColor" stroke-width="1.5"/><circle cx="13" cy="12.5" r="1.8" stroke="currentColor" stroke-width="1.5"/><path d="M4.7 7.2l6.5-3M4.7 8.8l6.5 3" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -94,10 +105,8 @@
         <svg viewBox="0 0 16 16" fill="none"><rect x="2.5" y="1.5" width="9" height="13" rx="1" stroke="currentColor" stroke-width="1.5"/><path d="M5 5h4M5 8h4M5 11h2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M13.5 3.5v10a1 1 0 01-1 1H11" stroke="currentColor" stroke-width="1.5"/></svg>
         Templates
       </div>
-      <div class="nav-item" data-page="recurring" onclick="goPage('recurring')">
-        <svg viewBox="0 0 16 16" fill="none"><path d="M3 6a5 5 0 018.5-2.5L13 5M13 10a5 5 0 01-8.5 2.5L3 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 2v3h-3M3 14v-3h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Recorrentes
-      </div>
+
+      <div class="nav-section">Configurações</div>
       <div class="nav-item" data-page="integrations" id="nav-integrations" onclick="goPage('integrations')">
         <svg viewBox="0 0 16 16" fill="none"><path d="M4 8h2.5a2 2 0 002-2V3.5M12 8H9.5a2 2 0 00-2 2v2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="3" cy="8" r="1.5" stroke="currentColor" stroke-width="1.5"/><circle cx="13" cy="8" r="1.5" stroke="currentColor" stroke-width="1.5"/><circle cx="7.5" cy="3.5" r="1.5" stroke="currentColor" stroke-width="1.5"/><circle cx="7.5" cy="12.5" r="1.5" stroke="currentColor" stroke-width="1.5"/></svg>
         Integrações
@@ -120,7 +129,6 @@
         </span>
         <span class="theme-toggle-label" id="theme-toggle-label">Modo escuro</span>
       </button>
-      <button class="logout-btn" onclick="doLogout()">Sair</button>
     </div>
   </aside>
 
@@ -787,6 +795,13 @@
               </div>
               <div style="margin-top:16px;text-align:right">
                 <button class="btn btn-primary" onclick="changePassword()">Alterar Senha</button>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-title">Sessão</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+                <div style="color:var(--text-muted);font-size:13px">Encerra a sua sessão atual neste dispositivo.</div>
+                <button class="btn btn-danger" onclick="doLogout()"><i data-lucide="log-out" class="ic-sm"></i> Sair da conta</button>
               </div>
             </div>
           </div>

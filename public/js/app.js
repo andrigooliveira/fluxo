@@ -1198,6 +1198,100 @@ function paintIcons() {
   }
 }
 
+/* ─── COLOR PICKER CUSTOM (16 swatches, design system) ─────────
+   Substitui o input[type=color] nativo (que renderiza o picker do SO).
+   Uso direto:
+     <button type="button" class="color-swatch-trigger" style="background:#7A00FF"
+             onclick="openColorPicker(this, (hex) => …)"></button>
+   Pra wrapping de hidden input nativo:
+     openColorPickerForInput(triggerEl, 'ws-color') — preserva oninput existente. */
+const COLOR_PALETTE = [
+  '#64748B', '#7A00FF', '#A855F7', '#EC4899',
+  '#F43F5E', '#EF4444', '#F59E0B', '#EAB308',
+  '#84CC16', '#22C55E', '#10B981', '#14B8A6',
+  '#06B6D4', '#3B82F6', '#6366F1', '#0F172A'
+];
+let _cpPopover = null;
+let _cpActiveTrigger = null;
+let _cpOnSelect = null;
+
+function _ensureColorPickerPopover() {
+  if (_cpPopover) return _cpPopover;
+  _cpPopover = document.createElement('div');
+  _cpPopover.className = 'color-picker-popover';
+  _cpPopover.innerHTML = '<div class="color-picker-grid">' +
+    COLOR_PALETTE.map(c => `<button type="button" class="color-swatch" data-color="${c}" style="background:${c}" title="${c}"><svg viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.5 12L13 4.5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`).join('') +
+    '</div>';
+  document.body.appendChild(_cpPopover);
+  _cpPopover.addEventListener('click', (e) => {
+    const sw = e.target.closest('.color-swatch');
+    if (!sw) return;
+    const hex = sw.dataset.color;
+    if (_cpOnSelect) _cpOnSelect(hex);
+    closeColorPicker();
+  });
+  // Click outside fecha
+  document.addEventListener('mousedown', (e) => {
+    if (!_cpPopover.classList.contains('open')) return;
+    if (_cpPopover.contains(e.target)) return;
+    if (_cpActiveTrigger && _cpActiveTrigger.contains(e.target)) return;
+    closeColorPicker();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && _cpPopover.classList.contains('open')) closeColorPicker();
+  });
+  return _cpPopover;
+}
+function openColorPicker(triggerEl, onSelect, currentHex) {
+  const pop = _ensureColorPickerPopover();
+  _cpActiveTrigger = triggerEl;
+  _cpOnSelect = onSelect;
+  // Highlight selected
+  pop.querySelectorAll('.color-swatch').forEach(sw => {
+    sw.classList.toggle('is-selected',
+      (currentHex || '').toLowerCase() === (sw.dataset.color || '').toLowerCase());
+  });
+  // Posiciona embaixo do trigger
+  const r = triggerEl.getBoundingClientRect();
+  pop.style.visibility = 'hidden';
+  pop.classList.add('open');
+  const pw = pop.offsetWidth, ph = pop.offsetHeight;
+  let left = r.left;
+  let top = r.bottom + 6;
+  if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+  if (top + ph > window.innerHeight - 8) top = r.top - ph - 6;
+  pop.style.left = Math.max(8, left) + 'px';
+  pop.style.top = Math.max(8, top) + 'px';
+  pop.style.visibility = '';
+  triggerEl.classList.add('is-open');
+}
+function closeColorPicker() {
+  if (!_cpPopover) return;
+  _cpPopover.classList.remove('open');
+  if (_cpActiveTrigger) _cpActiveTrigger.classList.remove('is-open');
+  _cpActiveTrigger = null;
+  _cpOnSelect = null;
+}
+// Helper pra hidden input compat (preserva oninput/onchange existentes)
+function openColorPickerForInput(triggerEl, inputId) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  openColorPicker(triggerEl, (hex) => {
+    input.value = hex;
+    triggerEl.style.background = hex;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, input.value);
+}
+// Quando o modal abre com cor pré-existente, sincroniza o background do trigger.
+function setColorValue(inputId, hex) {
+  const v = hex || '#7A00FF';
+  const input = document.getElementById(inputId);
+  if (input) input.value = v;
+  const trigger = document.querySelector(`.color-swatch-trigger[data-color-input="${inputId}"]`);
+  if (trigger) trigger.style.background = v;
+}
+
 /* ─────────── CUSTOM DATE / DATETIME PICKER ───────────
    Substitui o calendário e o seletor de hora nativos do navegador por um popup
    customizado que segue o design system. Para garantir que o picker nativo não
@@ -5504,7 +5598,7 @@ async function openProjectModal(id, presetClientId) {
   }
 
   $('p-name').value = p?.name || '';
-  $('p-color').value = p?.color || '#7A00FF';
+  setColorValue('p-color', p?.color || '#7A00FF');
   $('p-drive-files').value = p?.driveFiles || '';
   $('p-brand-assets').value = p?.brandAssets || '';
   $('p-guidelines').value = p?.guidelines || '';
@@ -6022,7 +6116,7 @@ function renderStageRows() {
          ondragstart="stageDragStart(event,${i})" ondragover="stageDragOver(event,${i})"
          ondragleave="stageDragLeave(event)" ondrop="stageDrop(event,${i})" ondragend="stageDragEnd()">
       <div class="stage-grip" title="Arraste para reordenar"><i data-lucide="grip-vertical" class="ic-sm"></i></div>
-      <input type="color" class="stage-color" value="${s.color}" oninput="stageRows[${i}].color=this.value">
+      <button type="button" class="color-swatch-trigger stage-color" style="background:${s.color}" onclick="openColorPicker(this, (c) => { stageRows[${i}].color = c; this.style.background = c; flowModalDirty = true; }, stageRows[${i}].color)" title="Cor da etapa"></button>
       <input class="form-control" value="${esc(s.label)}" placeholder="Nome da etapa" oninput="stageRows[${i}].label=this.value">
       <select id="stage-role-${i}" class="form-control stage-role" title="Função desta etapa" onchange="setStageRoleFilter(${i}, this.value)">${fnOpts}</select>
       <select id="stage-resp-${i}" class="form-control stage-resp" title="Responsável padrão da etapa" onchange="setStageResponsible(${i}, this.value)">${respHtml}</select>
@@ -6220,7 +6314,7 @@ function openWsModal(id) {
   $('ws-modal-title').textContent = id ? 'Editar Workspace' : 'Novo Workspace';
   const w = id ? wsById(id) : null;
   $('ws-name').value = w?.name || '';
-  $('ws-color').value = w?.color || '#7A00FF';
+  setColorValue('ws-color', w?.color || '#7A00FF');
   openModal('ws-modal');
 }
 async function saveWs() {
@@ -8008,7 +8102,7 @@ function openClientModal(id) {
   $('c-drive-files').value = c?.driveFiles || '';
   $('c-brand-assets').value = c?.brandAssets || '';
   $('c-guidelines').value = c?.guidelines || '';
-  $('c-color').value = c?.color || '#7A00FF';
+  setColorValue('c-color', c?.color || '#7A00FF');
   // Workspace
   const wsSel = $('c-workspace');
   const accessibleWs = workspaces.filter(w => me.isAdmin || (me.workspaces || []).includes(w.id));

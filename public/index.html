@@ -1017,7 +1017,8 @@
           </div>
           <div class="form-group">
             <label class="form-label">Cor de identificação</label>
-            <input class="form-control" id="c-color" type="color" value="#7A00FF" style="height:40px;padding:4px">
+            <button type="button" class="color-swatch-trigger" data-color-input="c-color" style="background:#7A00FF" onclick="openColorPickerForInput(this, 'c-color')" title="Escolher cor"></button>
+            <input id="c-color" type="color" value="#7A00FF" style="display:none">
           </div>
         </div>
       </div>
@@ -1167,7 +1168,8 @@
           </div>
           <div class="form-group">
             <label class="form-label">Cor de identificação</label>
-            <input class="form-control" id="p-color" type="color" value="#7A00FF" style="height:40px;padding:4px">
+            <button type="button" class="color-swatch-trigger" data-color-input="p-color" style="background:#7A00FF" onclick="openColorPickerForInput(this, 'p-color')" title="Escolher cor"></button>
+            <input id="p-color" type="color" value="#7A00FF" style="display:none">
           </div>
         </div>
       </div>
@@ -1436,7 +1438,8 @@
         </div>
         <div class="form-group">
           <label class="form-label">Cor</label>
-          <input class="form-control" id="ws-color" type="color" value="#7A00FF" style="height:40px;padding:4px">
+          <button type="button" class="color-swatch-trigger" data-color-input="ws-color" style="background:#7A00FF" onclick="openColorPickerForInput(this, 'ws-color')" title="Escolher cor"></button>
+          <input id="ws-color" type="color" value="#7A00FF" style="display:none">
         </div>
       </div>
     </div>

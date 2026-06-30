@@ -1210,28 +1210,28 @@
           <select class="form-control" id="fl-project" onchange="flowModalDirty=true"></select>
         </div>
       </div>
-      <label class="form-label" style="display:block;margin-bottom:8px">Etapas</label>
-      <div class="stage-list" id="stage-list" oninput="flowModalDirty=true"></div>
-      <button class="btn btn-ghost btn-sm flow-add-stage-btn" onclick="addStageRow();flowModalDirty=true"><i data-lucide="plus" class="ic-sm"></i> Adicionar nova etapa</button>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:12px;line-height:1.6">
-        <strong>Prazo (dias)</strong> começa a contar quando a demanda entra na etapa. <strong>Responsável</strong> assume a demanda ao chegar nela.
-        Marque <strong>"Conclui"</strong> nas etapas que encerram a demanda. Se uma etapa em uso for removida, as demandas dela voltam à primeira etapa.
+      <!-- Defaults aplicados às novas demandas deste fluxo (antes das etapas) -->
+      <div class="form-group full" style="margin-bottom:18px">
+        <label class="form-label">Descrição padrão</label>
+        <textarea class="form-control" id="fl-default-desc" rows="3" placeholder="Texto que aparecerá pré-preenchido na descrição de toda demanda criada neste fluxo (editável depois)." oninput="flowModalDirty=true"></textarea>
+      </div>
+      <div class="form-group full" style="margin-bottom:24px">
+        <label class="form-label">Checklist padrão</label>
+        <div class="flow-checklist-list" id="fl-default-checklist"></div>
+        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="addFlowChecklistItem()"><i data-lucide="plus" class="ic-sm"></i> Adicionar item</button>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.5">
+          Itens listados aparecerão no checklist de toda demanda nova deste fluxo. Quem cria pode editar ou remover antes de salvar.
+        </div>
       </div>
 
-      <!-- Defaults aplicados às novas demandas deste fluxo -->
-      <div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--hairline)">
-        <div class="section-title" style="font-size:13px;margin-bottom:14px">Padrões pra novas demandas deste fluxo</div>
-        <div class="form-group full" style="margin-bottom:18px">
-          <label class="form-label">Descrição padrão</label>
-          <textarea class="form-control" id="fl-default-desc" rows="3" placeholder="Texto que aparecerá pré-preenchido na descrição de toda demanda criada neste fluxo (editável depois)." oninput="flowModalDirty=true"></textarea>
-        </div>
-        <div class="form-group full">
-          <label class="form-label">Checklist padrão</label>
-          <div class="flow-checklist-list" id="fl-default-checklist"></div>
-          <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="addFlowChecklistItem()"><i data-lucide="plus" class="ic-sm"></i> Adicionar item</button>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.5">
-            Itens listados aparecerão no checklist de toda demanda nova deste fluxo. Quem cria pode editar ou remover antes de salvar.
-          </div>
+      <!-- Etapas (vêm depois dos padrões) -->
+      <div style="margin-top:8px;padding-top:20px;border-top:1px solid var(--hairline)">
+        <label class="form-label" style="display:block;margin-bottom:8px">Etapas</label>
+        <div class="stage-list" id="stage-list" oninput="flowModalDirty=true"></div>
+        <button class="btn btn-ghost btn-sm flow-add-stage-btn" onclick="addStageRow();flowModalDirty=true"><i data-lucide="plus" class="ic-sm"></i> Adicionar nova etapa</button>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:12px;line-height:1.6">
+          <strong>Prazo (dias)</strong> começa a contar quando a demanda entra na etapa. <strong>Responsável</strong> assume a demanda ao chegar nela.
+          Marque <strong>"Conclui"</strong> nas etapas que encerram a demanda. Se uma etapa em uso for removida, as demandas dela voltam à primeira etapa.
         </div>
       </div>
     </div>

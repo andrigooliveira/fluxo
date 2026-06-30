@@ -3697,7 +3697,10 @@ button.is-loading::after {
 .form-group-float > .form-control:not(:focus)::placeholder { color: transparent; }
 
 /* ─── Wizard de Nova Demanda (4 steps) ─────────────────────── */
-.demand-wizard-modal .modal-body { padding-bottom: 24px; }
+/* min-height fixa pra modal não pular de tamanho ao avançar/voltar
+   entre steps com quantidades diferentes de conteúdo. */
+.demand-wizard-modal .modal-body { padding-bottom: 24px; min-height: 70vh; }
+.demand-wizard-modal .wizard-step { min-height: calc(70vh - 48px); }
 .wizard-step-title {
   text-align: center; font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--text-dim);

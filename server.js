@@ -1820,10 +1820,11 @@ app.post('/api/flows', requireAuth, adminOnly, (req, res) => {
     clientEntity = db.clients.find(c => c.id === proj.clientId);
   }
   const clientName = clientEntity?.name || null;
-  // Icon pode ser URL pronta (/uploads/...) ou base64 (extrai pro disco).
+  // Icon aceita: URL pronta (/uploads/...), base64 (extrai pro disco)
+  // ou string "lucide:nome-do-icone" (referência da biblioteca, sem upload).
   let iconUrl = null;
   if (typeof icon === 'string') {
-    if (icon.startsWith('/uploads/')) iconUrl = icon;
+    if (icon.startsWith('/uploads/') || icon.startsWith('lucide:')) iconUrl = icon;
     else if (icon.startsWith('data:image/')) {
       const saved = saveUploadFromDataUri(icon, String(name || 'flow').trim() + '-icon');
       iconUrl = saved ? saved.url : null;
@@ -1887,12 +1888,14 @@ app.put('/api/flows/:id', requireAuth, adminOnly, (req, res) => {
   }
   if (icon !== undefined) {
     if (!icon) f.icon = null;
-    else if (typeof icon === 'string' && (icon.startsWith('/uploads/') || icon.startsWith('data:image/'))) {
-      // Se chegou base64, extrai pro disco (consistente com avatares)
+    else if (typeof icon === 'string') {
       if (icon.startsWith('data:image/')) {
+        // base64 → extrai pro disco (consistente com avatares)
         const saved = saveUploadFromDataUri(icon, (f.name || 'flow') + '-icon');
         f.icon = saved ? saved.url : null;
-      } else f.icon = icon;
+      } else if (icon.startsWith('/uploads/') || icon.startsWith('lucide:')) {
+        f.icon = icon;
+      }
     }
   }
   if (projectId !== undefined) {

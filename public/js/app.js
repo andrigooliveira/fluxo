@@ -1292,6 +1292,111 @@ function setColorValue(inputId, hex) {
   if (trigger) trigger.style.background = v;
 }
 
+/* ─── LUCIDE ICON PICKER ───────────────────────────────────
+   Modal com grid de TODOS os ícones do Lucide + search. Storage:
+     - 'lucide:icon-name'  → ícone da biblioteca
+     - 'data:image/...'    → upload do usuário (legacy/custom)
+     - null                → placeholder. */
+let _lucideAllNames = null;
+let _lucidePickerOnPick = null;
+let _lucidePickerRendered = false;
+
+function getLucideAllNames() {
+  if (_lucideAllNames) return _lucideAllNames;
+  const lib = window.lucide || {};
+  const src = lib.icons || {};
+  // Cada chave de lucide.icons é o nome do ícone em kebab-case.
+  // Fallback: filtra exports PascalCase do próprio window.lucide se .icons vazio.
+  let names = Object.keys(src);
+  if (!names.length) {
+    names = Object.keys(lib).filter(k => /^[A-Z]/.test(k) && k !== 'XMLNS')
+      .map(camelToKebab);
+  }
+  names.sort();
+  _lucideAllNames = names;
+  return names;
+}
+function camelToKebab(s) {
+  return s.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/([A-Z])([A-Z][a-z])/g, '$1-$2').toLowerCase();
+}
+
+function openLucidePicker(currentIcon, onPick) {
+  _lucidePickerOnPick = onPick;
+  const grid = $('lucide-picker-grid');
+  const currentName = (currentIcon || '').startsWith('lucide:') ? currentIcon.slice(7) : null;
+  // Renderiza grid uma vez só (cache pra próxima abertura)
+  if (!_lucidePickerRendered) {
+    const names = getLucideAllNames();
+    if (!names.length) {
+      grid.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center">Não foi possível carregar a biblioteca de ícones.</div>';
+    } else {
+      grid.innerHTML = names.map(n =>
+        `<button type="button" class="lucide-picker-item" data-name="${esc(n)}" title="${esc(n)}" onclick="pickLucideIcon('${esc(n)}')"><i data-lucide="${esc(n)}"></i></button>`
+      ).join('');
+      paintIcons();
+    }
+    $('lucide-result-count').textContent = names.length;
+    _lucidePickerRendered = true;
+  }
+  // Highlight da seleção atual
+  grid.querySelectorAll('.lucide-picker-item').forEach(el => {
+    el.classList.toggle('is-selected', el.dataset.name === currentName);
+  });
+  // Reset search
+  const search = $('lucide-search');
+  if (search) { search.value = ''; filterLucidePicker(); }
+  openModal('lucide-picker-modal');
+  setTimeout(() => search?.focus(), 80);
+  // Scroll pro selecionado, se houver
+  if (currentName) {
+    setTimeout(() => {
+      const sel = grid.querySelector('.lucide-picker-item.is-selected');
+      if (sel) sel.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }, 60);
+  }
+}
+function filterLucidePicker() {
+  const q = norm($('lucide-search').value || '');
+  const items = $('lucide-picker-grid').querySelectorAll('.lucide-picker-item');
+  let count = 0;
+  items.forEach(el => {
+    const match = !q || norm(el.dataset.name).includes(q);
+    el.classList.toggle('hidden', !match);
+    if (match) count++;
+  });
+  $('lucide-result-count').textContent = count;
+}
+function pickLucideIcon(name) {
+  if (_lucidePickerOnPick) _lucidePickerOnPick('lucide:' + name);
+  closeModal('lucide-picker-modal');
+}
+function handleLucidePickerUpload(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) { toast('Imagem excede 2MB.', 'error'); ev.target.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    if (_lucidePickerOnPick) _lucidePickerOnPick(e.target.result);
+    closeModal('lucide-picker-modal');
+  };
+  reader.readAsDataURL(file);
+  ev.target.value = '';
+}
+
+/* Helper de render de ícone de fluxo — suporta os 3 formatos. */
+function flowIconInnerHtml(icon, fallback) {
+  if (!icon) return `<i data-lucide="${fallback || 'workflow'}" class="ic-sm"></i>`;
+  if (typeof icon === 'string' && icon.startsWith('lucide:')) {
+    return `<i data-lucide="${esc(icon.slice(7))}" class="ic-md"></i>`;
+  }
+  return '';
+}
+function flowIconBackgroundStyle(icon) {
+  if (typeof icon === 'string' && icon.startsWith('lucide:')) return '';
+  if (!icon) return '';
+  return `background-image:url('${icon}');background-size:cover;background-position:center`;
+}
+
 /* ─────────── CUSTOM DATE / DATETIME PICKER ───────────
    Substitui o calendário e o seletor de hora nativos do navegador por um popup
    customizado que segue o design system. Para garantir que o picker nativo não
@@ -5919,9 +6024,11 @@ function renderClientFlows(client) {
 
   grid.innerHTML = list.map(f => {
     const count = demands.filter(d => d.flowId === f.id).length;
-    const iconHtml = f.icon
-      ? `<div class="flow-card-icon" style="background-image:url('${f.icon}');background-size:cover;background-position:center"></div>`
-      : `<div class="flow-card-icon flow-card-icon--placeholder"><i data-lucide="workflow" class="ic-sm"></i></div>`;
+    const iconHtml = !f.icon
+      ? `<div class="flow-card-icon flow-card-icon--placeholder"><i data-lucide="workflow" class="ic-sm"></i></div>`
+      : (typeof f.icon === 'string' && f.icon.startsWith('lucide:'))
+        ? `<div class="flow-card-icon flow-card-icon--lucide"><i data-lucide="${esc(f.icon.slice(7))}" class="ic-md"></i></div>`
+        : `<div class="flow-card-icon" style="background-image:url('${f.icon}');background-size:cover;background-position:center"></div>`;
     const adminActions = me.isAdmin ? `<div class="flow-card-actions" onclick="event.stopPropagation()">
         <button class="detail-icon-btn" title="Duplicar" onclick="openDuplicateFlow('${f.id}')"><i data-lucide="copy" class="ic-xs"></i></button>
         <button class="detail-icon-btn danger" title="Excluir" onclick="deleteFlow('${f.id}')"><i data-lucide="trash-2" class="ic-xs"></i></button>
@@ -6043,22 +6150,37 @@ function removeFlowChecklistItem(i) {
   renderFlowChecklist();
 }
 
-/* ── Ícone customizado do fluxo ── */
+/* ── Ícone do fluxo (Lucide picker ou imagem) ── */
 function refreshFlowIconPreview() {
   const el = $('fl-icon-preview');
   if (!el) return;
-  if (flowIconData) {
+  el.style.backgroundImage = '';
+  el.classList.remove('has-icon');
+  if (!flowIconData) {
+    el.innerHTML = '<span class="flow-icon-label">ícone</span>';
+    return;
+  }
+  if (typeof flowIconData === 'string' && flowIconData.startsWith('lucide:')) {
+    el.classList.add('has-icon');
+    el.innerHTML = `<i data-lucide="${esc(flowIconData.slice(7))}" class="ic-md"></i>`;
+    paintIcons();
+  } else {
+    el.classList.add('has-icon');
     el.innerHTML = '';
     el.style.backgroundImage = `url('${flowIconData}')`;
     el.style.backgroundSize = 'cover';
     el.style.backgroundPosition = 'center';
-    el.classList.add('has-icon');
-  } else {
-    el.style.backgroundImage = '';
-    el.classList.remove('has-icon');
-    el.innerHTML = '<span class="flow-icon-label">ícone</span>';
   }
 }
+// Trigger principal: abre o picker do Lucide (com fallback de upload dentro do modal)
+function openFlowIconPicker() {
+  openLucidePicker(flowIconData, (val) => {
+    flowIconData = val;
+    refreshFlowIconPreview();
+    flowModalDirty = true;
+  });
+}
+// Mantido pra compat com o input nativo legacy, caso ainda exista alguma referência
 function handleFlowIconUpload(ev) {
   const file = ev.target.files && ev.target.files[0];
   if (!file) return;
@@ -9088,9 +9210,11 @@ function renderWizardFlows() {
   list.forEach(f => {
     const card = document.createElement('div');
     card.className = 'wizard-card' + (wizardState.flowId === f.id ? ' is-selected' : '');
-    const iconHtml = f.icon
-      ? `<div class="wizard-card-avatar" style="background-image:url('${f.icon}');background-size:cover;background-position:center"></div>`
-      : `<div class="wizard-card-avatar wizard-card-avatar--icon"><i data-lucide="workflow" class="ic-sm"></i></div>`;
+    const iconHtml = !f.icon
+      ? `<div class="wizard-card-avatar wizard-card-avatar--icon"><i data-lucide="workflow" class="ic-sm"></i></div>`
+      : (typeof f.icon === 'string' && f.icon.startsWith('lucide:'))
+        ? `<div class="wizard-card-avatar wizard-card-avatar--icon"><i data-lucide="${esc(f.icon.slice(7))}" class="ic-md"></i></div>`
+        : `<div class="wizard-card-avatar" style="background-image:url('${f.icon}');background-size:cover;background-position:center"></div>`;
     const sub = f.demandType ? `<div class="wizard-card-sub">${esc(f.demandType)}</div>` : '';
     card.innerHTML = `${iconHtml}<div class="wizard-card-name">${esc(f.name)}</div>${sub}`;
     _wizardCardHandlers(card, (advance) => {

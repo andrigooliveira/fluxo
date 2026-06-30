@@ -1235,7 +1235,7 @@
         <div class="flow-modal-subtitle" id="flow-modal-subtitle">Cliente</div>
       </div>
       <div class="flow-modal-head-right">
-        <button type="button" class="flow-icon-picker" id="fl-icon-picker" onclick="$('fl-icon-input').click()" title="Adicionar ícone personalizado">
+        <button type="button" class="flow-icon-picker" id="fl-icon-picker" onclick="openFlowIconPicker()" title="Escolher ícone da biblioteca">
           <input type="file" id="fl-icon-input" accept="image/*" style="display:none" onchange="handleFlowIconUpload(event)">
           <div id="fl-icon-preview" class="flow-icon-preview">
             <span class="flow-icon-label">ícone</span>
@@ -1401,6 +1401,33 @@
 </div>
 
 <!-- MODAL: DUPLICAR FLUXO -->
+<!-- MODAL: BIBLIOTECA DE ÍCONES LUCIDE (picker pra ícone do fluxo) -->
+<div class="modal-overlay" id="lucide-picker-modal">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Biblioteca de Ícones</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Powered by Lucide</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('lucide-picker-modal')"><i data-lucide="x" class="ic-sm"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="filter-input-wrap" style="margin-bottom:14px;max-width:none">
+        <i data-lucide="search" class="filter-input-icon ic-sm"></i>
+        <input class="filter-input filter-input--with-icon" id="lucide-search" placeholder="Buscar ícone (ex.: rocket, calendar, user)…" oninput="filterLucidePicker()" style="max-width:none;width:100%">
+      </div>
+      <div id="lucide-picker-grid" class="lucide-picker-grid"></div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <span><span id="lucide-result-count">0</span> ícones encontrados</span>
+        <label style="cursor:pointer;color:var(--accent-text);text-decoration:underline">
+          ou enviar imagem própria
+          <input type="file" id="lucide-fallback-upload" accept="image/*" style="display:none" onchange="handleLucidePickerUpload(event)">
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="dupflow-modal">
   <div class="modal modal-sm">
     <div class="modal-header">

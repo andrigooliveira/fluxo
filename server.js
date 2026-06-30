@@ -261,6 +261,9 @@ function migrate() {
       if (s.roleFilter === undefined) s.roleFilter = s.responsibleRole || null;
       if (s.deadlineDays === undefined) s.deadlineDays = null;
     });
+    // Defaults aplicados às novas demandas que escolherem este fluxo
+    if (f.defaultDescription === undefined) f.defaultDescription = '';
+    if (!Array.isArray(f.defaultChecklist)) f.defaultChecklist = [];
   });
   db.demands.forEach(d => {
     if (!d.workspaceId) {
@@ -1748,6 +1751,15 @@ app.get('/api/flows', requireAuth, (req, res) => {
   res.json(db.flows.filter(f => ids.includes(f.workspaceId)));
 });
 
+/* Lista de itens default de checklist do fluxo. Cada item só tem text. */
+function sanitizeChecklistTemplate(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map(it => ({ text: String((it && it.text) || '').trim() }))
+    .filter(it => it.text)
+    .slice(0, 50);
+}
+
 function sanitizeStages(stages) {
   if (!Array.isArray(stages)) return null;
   const clean = stages.map(s => ({
@@ -1782,7 +1794,9 @@ function resolveStageOwner(stage, project) {
 }
 
 app.post('/api/flows', requireAuth, adminOnly, (req, res) => {
-  const { name, stages, demandType, projectId, workspaceId, client, clientId, icon, applyToAll } = req.body || {};
+  const { name, stages, demandType, projectId, workspaceId, client, clientId, icon, applyToAll, defaultDescription, defaultChecklist } = req.body || {};
+  const defaultDesc = typeof defaultDescription === 'string' ? defaultDescription : '';
+  const defaultChk = sanitizeChecklistTemplate(defaultChecklist);
   const clean = sanitizeStages(stages);
   if (!String(name || '').trim()) return res.status(400).json({ error: 'Nome do fluxo é obrigatório' });
   if (!clean) return res.status(400).json({ error: 'O fluxo precisa de pelo menos 2 etapas com nome' });
@@ -1826,7 +1840,9 @@ app.post('/api/flows', requireAuth, adminOnly, (req, res) => {
         id: uid(), workspaceId: ws, projectId: t.id,
         clientId: clientEntity.id, client: clientName, icon: iconUrl,
         name: String(name).trim(), demandType: String(demandType || '').trim(),
-        stages: sanitizeStages(stages), createdAt: nowISO()
+        stages: sanitizeStages(stages),
+        defaultDescription: defaultDesc, defaultChecklist: defaultChk,
+        createdAt: nowISO()
       };
       db.flows.push(f);
       saveEntity('flows', f);
@@ -1840,7 +1856,9 @@ app.post('/api/flows', requireAuth, adminOnly, (req, res) => {
     clientId: clientEntity ? clientEntity.id : null, client: clientName,
     icon: iconUrl,
     name: String(name).trim(), demandType: String(demandType || '').trim(),
-    stages: clean, createdAt: nowISO()
+    stages: clean,
+    defaultDescription: defaultDesc, defaultChecklist: defaultChk,
+    createdAt: nowISO()
   };
   db.flows.push(f);
   saveEntity('flows', f);
@@ -1851,7 +1869,7 @@ app.post('/api/flows', requireAuth, adminOnly, (req, res) => {
 app.put('/api/flows/:id', requireAuth, adminOnly, (req, res) => {
   const f = db.flows.find(x => x.id === req.params.id);
   if (!f || !canAccessWs(req.user, f.workspaceId)) return res.status(404).json({ error: 'Fluxo não encontrado' });
-  const { name, stages, demandType, projectId, client, clientId, icon } = req.body || {};
+  const { name, stages, demandType, projectId, client, clientId, icon, defaultDescription, defaultChecklist } = req.body || {};
   if (typeof name === 'string' && name.trim()) f.name = name.trim();
   if (typeof demandType === 'string') f.demandType = demandType.trim();
   // Atualiza clientId (e mantém f.client em sincronia pelo nome da entidade)
@@ -1899,6 +1917,8 @@ app.put('/api/flows/:id', requireAuth, adminOnly, (req, res) => {
       }
     });
   }
+  if (typeof defaultDescription === 'string') f.defaultDescription = defaultDescription;
+  if (defaultChecklist !== undefined) f.defaultChecklist = sanitizeChecklistTemplate(defaultChecklist);
   saveDB();
   broadcastChange('flow', 'update', { id: f.id, workspaceId: f.workspaceId, byUserId: req.user.id });
   res.json(f);
@@ -2011,10 +2031,35 @@ app.post('/api/demands', requireAuth, (req, res) => {
   if (!flow) return res.status(400).json({ error: 'Nenhum fluxo disponível para este projeto' });
   const stage = stageById(flow, b.status) || flow.stages[0];
   const stageDue = stage.deadlineDays ? addDays(today(), stage.deadlineDays) : (b.deadline || null);
+  // Defaults do fluxo: descrição se vazia + checklist se não veio nada explícito.
+  // Frontend pode ter pré-populado, mas se o user deixou em branco aproveitamos
+  // o padrão do fluxo (não força — se enviou string vazia, não substitui).
+  const useDefaultDesc = (b.description === undefined || b.description === null)
+    && (flow.defaultDescription && flow.defaultDescription.trim());
+  const initialDesc = useDefaultDesc ? String(flow.defaultDescription) : String(b.description || '');
+  // Checklist inicial: explicit list > flow.defaultChecklist > [].
+  let initialChecklist = [];
+  if (Array.isArray(b.checklist) && b.checklist.length) {
+    initialChecklist = b.checklist
+      .map(it => ({
+        id: uid(),
+        text: String((it && it.text) || '').trim(),
+        done: false, doneBy: null, doneAt: null,
+        createdBy: req.user.id, createdAt: nowISO()
+      }))
+      .filter(it => it.text);
+  } else if (Array.isArray(flow.defaultChecklist) && flow.defaultChecklist.length) {
+    initialChecklist = flow.defaultChecklist.map(it => ({
+      id: uid(),
+      text: String(it.text || '').trim(),
+      done: false, doneBy: null, doneAt: null,
+      createdBy: req.user.id, createdAt: nowISO()
+    })).filter(it => it.text);
+  }
   const d = {
     id: uid(), workspaceId: project.workspaceId, projectId: project.id,
     flowId: flow.id, name: String(b.name).trim(),
-    description: String(b.description || ''), briefing: normalizeUrlSrv(b.briefing),
+    description: initialDesc, briefing: normalizeUrlSrv(b.briefing),
     deadline: b.deadline || null,
     estimatedHours: Number(b.estimatedHours) > 0 ? Math.round(Number(b.estimatedHours) * 100) / 100 : null,
     priority: [1,2,3,4].includes(Number(b.priority)) ? Number(b.priority) : 3,
@@ -2031,6 +2076,7 @@ app.post('/api/demands', requireAuth, (req, res) => {
     stageEnteredAt: nowISO(), stageDueDate: stageDue,
     stageHistory: [{ stageId: stage.id, enteredAt: nowISO(), dueDate: stageDue }],
     timeEntries: [], comments: [], history: [],
+    checklist: initialChecklist,
     attachments: sanitizeAttachments(b.attachments),
     recurrence: sanitizeRecurrence(b.recurrence),
     createdAt: nowISO(),

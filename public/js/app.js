@@ -3307,7 +3307,8 @@ function flowsForProject(projectId) {
 }
 function onDemandProjectChange() {
   const pid = $('f-project').value;
-  const fl = pid ? flowsForProject(pid) : wsFlows();
+  const fl = (pid ? flowsForProject(pid) : wsFlows())
+    .slice().sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
   const prev = $('f-flow').value;
   $('f-flow').innerHTML = fl.map(f => `<option value="${f.id}">${esc(f.name)}${f.demandType ? ' · ' + esc(f.demandType) : ''}</option>`).join('');
   if ([...$('f-flow').options].some(o => o.value === prev)) $('f-flow').value = prev;
@@ -3325,6 +3326,17 @@ function syncStatusOptions(selectedStageId) {
     const stage = flow.stages.find(s => s.id === stageId);
     const autoOwner = stage?.responsibleId || null;
     buildUserSelect($('f-owner-select'), wsUsers(), autoOwner, null);
+    // Defaults herdados do fluxo: só aplica em NOVA demanda e se o usuário ainda
+    // não digitou nada nos campos (não sobrescreve mudanças manuais).
+    const descEl = $('f-description');
+    if (descEl && !descEl.value.trim() && flow.defaultDescription) {
+      descEl.value = flow.defaultDescription;
+    }
+    // Checklist herdado — só popula se ainda tá zerado (evita resetar edições)
+    if (!demandChecklistDraft.length && Array.isArray(flow.defaultChecklist)) {
+      demandChecklistDraft = flow.defaultChecklist.map(it => ({ text: String(it.text || '') }));
+    }
+    renderDemandChecklist();
   }
 }
 function onDemandStatusChange() {
@@ -3335,6 +3347,40 @@ function onDemandStatusChange() {
       buildUserSelect($('f-owner-select'), wsUsers(), stage?.responsibleId || null, null);
     }
   }
+}
+
+/* Draft do checklist a ser criado junto com a demanda nova.
+   Inicializado pelo defaultChecklist do fluxo em syncStatusOptions().
+   Editável aqui — usuário pode adicionar/remover/editar texto antes de salvar. */
+let demandChecklistDraft = [];
+function renderDemandChecklist() {
+  const wrap = $('f-checklist-list');
+  const group = $('f-checklist-group');
+  if (!wrap || !group) return;
+  // Só exibe na criação (não em edição — checklist edita pela aba detail)
+  if (editingId) { group.style.display = 'none'; return; }
+  if (!demandChecklistDraft.length) {
+    group.style.display = 'none';
+    wrap.innerHTML = '';
+    return;
+  }
+  group.style.display = '';
+  wrap.innerHTML = demandChecklistDraft.map((it, i) => `
+    <div class="flow-checklist-item">
+      <input class="form-control" value="${esc(it.text)}" placeholder="Item do checklist" oninput="demandChecklistDraft[${i}].text=this.value">
+      <button type="button" class="icon-btn danger" title="Remover" onclick="removeDemandChecklistItem(${i})"><i data-lucide="x" class="ic-sm"></i></button>
+    </div>`).join('');
+  paintIcons();
+}
+function addDemandChecklistItem() {
+  demandChecklistDraft.push({ text: '' });
+  renderDemandChecklist();
+  const inputs = $('f-checklist-list').querySelectorAll('input.form-control');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+function removeDemandChecklistItem(i) {
+  demandChecklistDraft.splice(i, 1);
+  renderDemandChecklist();
 }
 function fillDemandSelectors(d) {
   const projs = wsProjects().filter(p => p.active !== false || (d && d.projectId === p.id))
@@ -3375,9 +3421,8 @@ function applyDemandTemplate() {
 
 function openNewDemand() {
   editingId = null;
-  $('modal-title').textContent = 'Nova Demanda';
+  $('modal-title').textContent = 'Nova demanda';
   $('demand-delete-btn').style.display = 'none';
-  $('save-as-template-btn').style.display = '';
   fillDemandSelectors(null);
   fillTemplateSelector();
   $('f-template').value = '';
@@ -3385,31 +3430,36 @@ function openNewDemand() {
   $('f-briefing').value = ''; $('f-deadline').value = '';
   $('f-estimated').value = ''; $('f-priority').value = '3';
   $('f-qty-pieces').value = ''; $('f-qty-arts').value = ''; $('f-qty-variations').value = '';
-  // Popula select de "Atribuir entregáveis a"
   fillDeliverableUserSelect('f-deliverable-user', null);
+  demandChecklistDraft = [];
+  renderDemandChecklist();
   $('f-rec-enabled').checked = false; $('f-rec-config').style.display = 'none';
   $('f-rec-pattern').value = 'weekly'; $('f-rec-weekday').value = '1'; $('f-rec-end').value = '';
   $('f-project').value = '';
   demandAttachments = [];
   refreshFormAttList('f-attachments-list');
-  onDemandProjectChange();
   applyPriorityDropdown('f-priority');
+  // Inicia o wizard no step 1 (cliente). Reset completo do estado.
+  wizardState = { step: 1, clientId: null, projectId: null, flowId: null };
+  wizardLastFlowApplied = null;
+  wizardGoTo(1);
   openModal('demand-modal');
   navPush('/demands/new');
-  setTimeout(() => {
-    $('f-name').focus();
-    setupDragDrop('#demand-modal .modal-content', 'f-attachments-list', processDroppedFiles);
-  }, 60);
+  setTimeout(() => setupDragDrop('#demand-modal .modal-content', 'f-attachments-list', processDroppedFiles), 60);
 }
 function openEditDemand(id) {
   const d = demands.find(x => x.id === id); if (!d) return;
   editingId = id;
-  $('modal-title').textContent = 'Editar Demanda';
+  $('modal-title').textContent = 'Editar demanda';
   $('demand-delete-btn').style.display = '';
-  $('save-as-template-btn').style.display = '';
   fillDemandSelectors(d);
   fillTemplateSelector();
   $('f-template-group').style.display = 'none';
+  // Em edição, pula o wizard — vai direto pro form (step 4) com seleção pronta
+  wizardState = { step: 4, clientId: projectById(d.projectId)?.clientId || null, projectId: d.projectId, flowId: d.flowId };
+  // Marca o flow como "já aplicado" pra evitar reset dos campos preenchidos pela demanda
+  wizardLastFlowApplied = d.flowId;
+  wizardGoTo(4);
   $('f-name').value = d.name;
   $('f-description').value = d.description || '';
   $('f-briefing').value = d.briefing || '';
@@ -3420,6 +3470,9 @@ function openEditDemand(id) {
   $('f-qty-arts').value = d.qtyArts || '';
   $('f-qty-variations').value = d.qtyVariations || '';
   fillDeliverableUserSelect('f-deliverable-user', d.deliverableUserId || '');
+  // Em edição, o checklist é gerenciado pelo painel de detalhe (não aqui)
+  demandChecklistDraft = [];
+  renderDemandChecklist();
   // Recurrence
   const rec = d.recurrence;
   $('f-rec-enabled').checked = !!(rec && rec.enabled);
@@ -3463,6 +3516,9 @@ async function saveDemand() {
     qtyArts: Number($('f-qty-arts').value) || 0,
     qtyVariations: Number($('f-qty-variations').value) || 0,
     deliverableUserId: $('f-deliverable-user')?.value || null,
+    // Checklist inicial — só faz sentido em CRIAÇÃO. Em edição ignora (o user
+    // edita pela aba detail). Filtra itens vazios.
+    checklist: editingId ? undefined : demandChecklistDraft.filter(it => (it.text || '').trim()).map(it => ({ text: it.text.trim() })),
     status: $('f-status').value,
     ownerId: $('f-owner-select').dataset.value || null,
     attachments: demandAttachments.slice(),
@@ -5844,8 +5900,44 @@ function openFlowModal(id, presetClientId) {
         { id: null, label: 'Concluída', color: '#22D3A5', done: true,  roleFilter: null, responsibleId: null, responsibleRole: null, deadlineDays: null }
       ];
   renderStageRows();
+  // Defaults aplicados a novas demandas deste fluxo
+  $('fl-default-desc').value = f?.defaultDescription || '';
+  flowDefaultChecklist = Array.isArray(f?.defaultChecklist)
+    ? f.defaultChecklist.map(it => ({ text: String(it.text || '') }))
+    : [];
+  renderFlowChecklist();
   openModal('flow-modal');
   navPush(id ? '/flows/' + id : '/flows/new');
+}
+
+/* Checklist padrão do fluxo — array editável de { text } */
+let flowDefaultChecklist = [];
+function renderFlowChecklist() {
+  const wrap = $('fl-default-checklist');
+  if (!wrap) return;
+  if (!flowDefaultChecklist.length) {
+    wrap.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px 0">Nenhum item ainda. Clique em "Adicionar item".</div>';
+  } else {
+    wrap.innerHTML = flowDefaultChecklist.map((it, i) => `
+      <div class="flow-checklist-item">
+        <input class="form-control" value="${esc(it.text)}" placeholder="Ex.: Revisar gramática" oninput="flowDefaultChecklist[${i}].text=this.value;flowModalDirty=true">
+        <button type="button" class="icon-btn danger" title="Remover" onclick="removeFlowChecklistItem(${i})"><i data-lucide="x" class="ic-sm"></i></button>
+      </div>`).join('');
+  }
+  paintIcons();
+}
+function addFlowChecklistItem() {
+  flowDefaultChecklist.push({ text: '' });
+  flowModalDirty = true;
+  renderFlowChecklist();
+  // Foca no input recém-criado
+  const inputs = $('fl-default-checklist').querySelectorAll('input.form-control');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+function removeFlowChecklistItem(i) {
+  flowDefaultChecklist.splice(i, 1);
+  flowModalDirty = true;
+  renderFlowChecklist();
 }
 
 /* ── Ícone customizado do fluxo ── */
@@ -6032,7 +6124,9 @@ async function saveFlow() {
     client: clientEntity ? clientEntity.name : null, // mantém legado em sincronia
     icon: flowIconData || null,
     stages: stageRows,
-    applyToAll: applyAll
+    applyToAll: applyAll,
+    defaultDescription: $('fl-default-desc')?.value || '',
+    defaultChecklist: flowDefaultChecklist.filter(it => (it.text || '').trim()).map(it => ({ text: it.text.trim() }))
   };
   try {
     const r = editingFlowId
@@ -8297,6 +8391,215 @@ async function withLoading(eventOrBtn, asyncFn) {
   finally {
     btn.disabled = false;
     btn.classList.remove('is-loading');
+  }
+}
+
+/* ─── WIZARD DA NOVA DEMANDA ─────────────────────────────────────
+   4 steps: Cliente → Projeto → Fluxo → Form. Click 1x seleciona um card,
+   click duplo avança. Footer mostra Voltar/Avançar (steps 1-3) ou
+   Voltar/Salvar como template/Criar demanda (step 4). Editar pula direto
+   pro step 4 com seleção pré-preenchida. */
+let wizardState = { step: 1, clientId: null, projectId: null, flowId: null };
+// Último fluxo cujos defaults (descrição + checklist) já foram aplicados no form.
+// Permite re-aplicar quando o usuário troca de fluxo no wizard sem perder edições
+// quando ele volta e re-seleciona o MESMO fluxo.
+let wizardLastFlowApplied = null;
+
+function wizardGoTo(n) {
+  wizardState.step = n;
+  // Mostra só o step ativo
+  [1, 2, 3, 4].forEach(s => {
+    const el = document.getElementById('dw-step-' + s);
+    if (el) el.style.display = (s === n ? '' : 'none');
+  });
+  // Footer dinâmico
+  const back = $('dw-back-btn');
+  const next = $('dw-next-btn');
+  const create = $('dw-create-btn');
+  const tpl = $('save-as-template-btn');
+  // Voltar: oculto no step 1 (na criação) e em modo edição (não tem wizard).
+  if (back) back.style.display = (n > 1 && !editingId) ? '' : 'none';
+  if (next) next.style.display = (n < 4) ? '' : 'none';
+  if (create) create.style.display = (n === 4) ? '' : 'none';
+  if (create) create.textContent = editingId ? 'Salvar Demanda' : 'Criar demanda';
+  if (tpl) tpl.style.display = (n === 4) ? '' : 'none';
+  // Render do step ativo
+  if (n === 1) renderWizardClients();
+  else if (n === 2) renderWizardProjects();
+  else if (n === 3) renderWizardFlows();
+  else if (n === 4) renderWizardStep4();
+  updateWizardNextEnabled();
+  paintIcons();
+}
+
+function wizardBack() {
+  if (wizardState.step <= 1) return;
+  wizardGoTo(wizardState.step - 1);
+}
+function wizardNext() {
+  if (wizardState.step < 4) wizardGoTo(wizardState.step + 1);
+}
+function updateWizardNextEnabled() {
+  const btn = $('dw-next-btn');
+  if (!btn) return;
+  let ok = false;
+  if (wizardState.step === 1) ok = !!wizardState.clientId;
+  else if (wizardState.step === 2) ok = !!wizardState.projectId;
+  else if (wizardState.step === 3) ok = !!wizardState.flowId;
+  btn.disabled = !ok;
+}
+
+/* Renderizadores dos 3 grids de seleção. Card click = seleciona; dblclick = avança. */
+function _wizardCardHandlers(el, onSelect) {
+  el.addEventListener('click', () => onSelect(false));
+  el.addEventListener('dblclick', () => onSelect(true));
+}
+
+function renderWizardClients() {
+  const wrap = $('dw-clients-grid');
+  if (!wrap) return;
+  const q = norm(($('dw-client-search')?.value || '').trim());
+  const list = clients
+    .filter(c => (me.isAdmin || (me.workspaces || []).includes(c.workspaceId)))
+    .filter(c => c.active !== false)
+    .filter(c => !q || norm(c.name).includes(q))
+    .sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+  if (!list.length) {
+    wrap.innerHTML = emptyState('Nenhum cliente cadastrado', 'Crie clientes em "Clientes" antes de criar uma demanda.', 'users');
+    return;
+  }
+  wrap.innerHTML = '';
+  list.forEach(c => {
+    const card = document.createElement('div');
+    card.className = 'wizard-card' + (wizardState.clientId === c.id ? ' is-selected' : '');
+    const avatar = c.avatar
+      ? `<div class="wizard-card-avatar" style="background-image:url('${c.avatar}');background-size:cover;background-position:center"></div>`
+      : `<div class="wizard-card-avatar" style="background:${hexDim(c.color || '#7A00FF')};color:${c.color || '#7A00FF'}">${esc((c.name || 'C').charAt(0).toUpperCase())}</div>`;
+    card.innerHTML = `${avatar}<div class="wizard-card-name">${esc(c.name)}</div>`;
+    _wizardCardHandlers(card, (advance) => {
+      wizardState.clientId = c.id;
+      // Limpa downstream se mudou a seleção
+      wizardState.projectId = null; wizardState.flowId = null;
+      renderWizardClients();
+      updateWizardNextEnabled();
+      if (advance) wizardNext();
+    });
+    wrap.appendChild(card);
+  });
+}
+
+function renderWizardProjects() {
+  const wrap = $('dw-projects-grid');
+  if (!wrap) return;
+  const q = norm(($('dw-project-search')?.value || '').trim());
+  const cid = wizardState.clientId;
+  const list = projects
+    .filter(p => p.clientId === cid && p.active !== false)
+    .filter(p => !q || norm(p.name).includes(q))
+    .sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+  if (!list.length) {
+    wrap.innerHTML = emptyState('Nenhum projeto ativo', 'Esse cliente não tem projetos ativos. Crie um pelo painel do cliente.', 'inbox');
+    return;
+  }
+  wrap.innerHTML = '';
+  list.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'wizard-card' + (wizardState.projectId === p.id ? ' is-selected' : '');
+    const avatar = p.avatar
+      ? `<div class="wizard-card-avatar" style="background-image:url('${p.avatar}');background-size:cover;background-position:center"></div>`
+      : `<div class="wizard-card-avatar" style="background:${hexDim(p.color || '#7A00FF')};color:${p.color || '#7A00FF'}">${esc((p.name || 'P').charAt(0).toUpperCase())}</div>`;
+    card.innerHTML = `${avatar}<div class="wizard-card-name">${esc(p.name)}</div>`;
+    _wizardCardHandlers(card, (advance) => {
+      wizardState.projectId = p.id;
+      wizardState.flowId = null;
+      renderWizardProjects();
+      updateWizardNextEnabled();
+      if (advance) wizardNext();
+    });
+    wrap.appendChild(card);
+  });
+}
+
+function renderWizardFlows() {
+  const wrap = $('dw-flows-grid');
+  if (!wrap) return;
+  const q = norm(($('dw-flow-search')?.value || '').trim());
+  const typeFilter = $('dw-flow-type')?.value || '';
+  const pid = wizardState.projectId;
+  const allFlows = flowsForProject(pid);
+  // Popula filtro de tipo
+  const types = [...new Set(allFlows.map(f => f.demandType).filter(Boolean))].sort();
+  const tSel = $('dw-flow-type');
+  if (tSel) {
+    const cur = tSel.value;
+    tSel.innerHTML = '<option value="">Todos os tipos</option>' + types.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    if (types.includes(cur)) tSel.value = cur;
+  }
+  const list = allFlows
+    .filter(f => !typeFilter || f.demandType === typeFilter)
+    .filter(f => !q || norm(f.name).includes(q))
+    .sort((a, b) => norm(a.name).localeCompare(norm(b.name)));
+  if (!list.length) {
+    wrap.innerHTML = emptyState('Nenhum fluxo disponível', 'Esse projeto não tem fluxos. Crie um pelo painel do cliente.', 'flow');
+    return;
+  }
+  wrap.innerHTML = '';
+  list.forEach(f => {
+    const card = document.createElement('div');
+    card.className = 'wizard-card' + (wizardState.flowId === f.id ? ' is-selected' : '');
+    const iconHtml = f.icon
+      ? `<div class="wizard-card-avatar" style="background-image:url('${f.icon}');background-size:cover;background-position:center"></div>`
+      : `<div class="wizard-card-avatar wizard-card-avatar--icon"><i data-lucide="workflow" class="ic-sm"></i></div>`;
+    const sub = f.demandType ? `<div class="wizard-card-sub">${esc(f.demandType)}</div>` : '';
+    card.innerHTML = `${iconHtml}<div class="wizard-card-name">${esc(f.name)}</div>${sub}`;
+    _wizardCardHandlers(card, (advance) => {
+      wizardState.flowId = f.id;
+      renderWizardFlows();
+      updateWizardNextEnabled();
+      if (advance) wizardNext();
+    });
+    wrap.appendChild(card);
+  });
+  paintIcons();
+}
+
+/* Step 4 — popula o form atual a partir do state do wizard. */
+function renderWizardStep4() {
+  const cid = wizardState.clientId;
+  const pid = wizardState.projectId;
+  const fid = wizardState.flowId;
+  // Breadcrumb visual
+  const c = cid ? clientById(cid) : null;
+  const p = pid ? projectById(pid) : null;
+  const f = fid ? flowById(fid) : null;
+  const bc = $('dw-breadcrumb');
+  if (bc) {
+    bc.innerHTML = [c?.name, p?.name, f?.name].filter(Boolean).map(s => esc(s)).join(' <span style="opacity:.45">›</span> ');
+  }
+  // Sincroniza os selects ocultos (compat com o resto do código)
+  if (pid) $('f-project').value = pid;
+  // Trocou de fluxo desde a última aplicação? Reseta defaults (descrição + checklist)
+  // para que o novo fluxo herde seus próprios valores em syncStatusOptions().
+  // Só aplica em criação — edição mantém os campos da demanda existente.
+  if (!editingId && fid && fid !== wizardLastFlowApplied) {
+    $('f-description').value = '';
+    demandChecklistDraft = [];
+    renderDemandChecklist();
+    wizardLastFlowApplied = fid;
+  }
+  // onDemandProjectChange popula f-flow options; se já tiver, força o nosso
+  if (pid) {
+    onDemandProjectChange();
+    if (fid) {
+      $('f-flow').value = fid;
+      syncStatusOptions(editingId ? demandById(editingId)?.status : undefined);
+    }
+  }
+  // Sincroniza responsável (se edição) — já feito pelo openEditDemand;
+  // na criação, syncStatusOptions já chama buildUserSelect com auto-owner.
+  if (!editingId) {
+    // Foca o nome
+    setTimeout(() => $('f-name').focus(), 60);
   }
 }
 

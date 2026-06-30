@@ -562,7 +562,6 @@
               <input class="filter-input filter-input--with-icon" id="flow-search" placeholder="Buscar cliente…" oninput="renderFlows()">
             </div>
             <select class="filter-select" id="flow-f-client" onchange="renderFlows()"><option value="">Todos os clientes</option></select>
-            <button class="btn btn-primary btn-sm admin-only" style="margin-left:auto" onclick="openFlowModal()"><i data-lucide="plus" class="ic-sm"></i> Novo Fluxo</button>
           </div>
           <div class="section-title" style="margin-bottom:16px">Fluxos de Demanda</div>
           <div class="flow-grid" id="flow-clients-grid"></div>
@@ -763,26 +762,65 @@
   </main>
 </div>
 
-<!-- MODAL: NOVA/EDITAR DEMANDA -->
+<!-- MODAL: NOVA/EDITAR DEMANDA — wizard de 4 steps em NOVA, form direto em EDITAR -->
 <div class="modal-overlay" id="demand-modal">
-  <div class="modal modal-lg">
+  <div class="modal modal-lg demand-wizard-modal">
     <div class="modal-header">
-      <div class="modal-title" id="modal-title">Nova Demanda</div>
+      <div class="modal-title" id="modal-title">Nova demanda</div>
       <button class="modal-close" onclick="closeModal('demand-modal')"><i data-lucide="x" class="ic-sm"></i></button>
     </div>
     <div class="modal-body">
-      <div class="form-grid">
+
+      <!-- STEP 1 — selecionar cliente -->
+      <div class="wizard-step" id="dw-step-1" style="display:none">
+        <div class="wizard-step-title">SELECIONE O CLIENTE</div>
+        <div class="filter-input-wrap wizard-search">
+          <i data-lucide="search" class="filter-input-icon ic-sm"></i>
+          <input class="filter-input filter-input--with-icon" id="dw-client-search" placeholder="Pesquisar" oninput="renderWizardClients()">
+        </div>
+        <div class="wizard-card-grid" id="dw-clients-grid"></div>
+      </div>
+
+      <!-- STEP 2 — selecionar projeto -->
+      <div class="wizard-step" id="dw-step-2" style="display:none">
+        <div class="wizard-step-title">SELECIONE O PROJETO</div>
+        <div class="filter-input-wrap wizard-search">
+          <i data-lucide="search" class="filter-input-icon ic-sm"></i>
+          <input class="filter-input filter-input--with-icon" id="dw-project-search" placeholder="Pesquisar" oninput="renderWizardProjects()">
+        </div>
+        <div class="wizard-card-grid" id="dw-projects-grid"></div>
+      </div>
+
+      <!-- STEP 3 — selecionar fluxo (com filtro de tipo) -->
+      <div class="wizard-step" id="dw-step-3" style="display:none">
+        <div class="wizard-step-title">SELECIONE O TIPO DE DEMANDA</div>
+        <div class="wizard-search-row">
+          <select class="filter-select" id="dw-flow-type" onchange="renderWizardFlows()">
+            <option value="">Todos os tipos</option>
+          </select>
+          <div class="filter-input-wrap wizard-search" style="flex:1">
+            <i data-lucide="search" class="filter-input-icon ic-sm"></i>
+            <input class="filter-input filter-input--with-icon" id="dw-flow-search" placeholder="Pesquisar" oninput="renderWizardFlows()">
+          </div>
+        </div>
+        <div class="wizard-card-grid" id="dw-flows-grid"></div>
+      </div>
+
+      <!-- STEP 4 — formulário tradicional -->
+      <div class="wizard-step" id="dw-step-4" style="display:none">
+        <div class="wizard-breadcrumb" id="dw-breadcrumb"></div>
+        <div class="form-grid">
         <!-- 1. NOME DA DEMANDA — floating label -->
         <div class="form-group form-group-float full">
           <input class="form-control" id="f-name" placeholder=" ">
           <label for="f-name">Nome da Demanda</label>
         </div>
-        <!-- 2. PROJETO | FLUXO -->
-        <div class="form-group">
+        <!-- Selects de PROJETO/FLUXO ocultos — selecionados via wizard -->
+        <div class="form-group" style="display:none">
           <label class="form-label">Projeto</label>
           <select class="form-control" id="f-project" onchange="onDemandProjectChange()"></select>
         </div>
-        <div class="form-group">
+        <div class="form-group" style="display:none">
           <label class="form-label">Fluxo</label>
           <select class="form-control" id="f-flow" onchange="syncStatusOptions()"></select>
         </div>
@@ -796,7 +834,7 @@
           <input class="form-control" id="f-briefing" type="url" placeholder=" ">
           <label for="f-briefing">Link do Briefing</label>
         </div>
-        <!-- 5. ANEXOS -->
+        <!-- 5. ANEXOS (acima do checklist) -->
         <div class="form-group full">
           <label class="form-label">Anexos</label>
           <div class="demand-att-buttons">
@@ -807,6 +845,12 @@
             <button type="button" class="demand-att-btn" onclick="addDemandAttachmentLink('f-attachments-list')"><i data-lucide="link" class="ic-sm"></i><span>Link</span></button>
           </div>
           <div class="demand-att-list" id="f-attachments-list" style="margin-top:10px"></div>
+        </div>
+        <!-- 6. CHECKLIST (vem do flow.defaultChecklist, editável antes de salvar) -->
+        <div class="form-group full" id="f-checklist-group" style="display:none">
+          <label class="form-label">Checklist <span class="qty-cell-hint" title="Itens herdados do fluxo. Você pode editar, remover ou adicionar antes de salvar.">?</span></label>
+          <div class="flow-checklist-list" id="f-checklist-list"></div>
+          <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addDemandChecklistItem()"><i data-lucide="plus" class="ic-sm"></i> Adicionar item</button>
         </div>
         <!-- ENTREGÁVEIS (peças, artes, variações + atribuir a) — 4 campos do mesmo tamanho em 1 linha -->
         <div class="form-group full">
@@ -846,33 +890,33 @@
           <label class="form-label">Responsável Atual</label>
           <div id="f-owner-select"></div>
         </div>
-      </div>
+        </div><!-- /form-grid -->
 
-      <!-- Campos ocultos do form (mantidos pra compat de JS / dados padrão).
-           Template, prazo, status, horas estimadas e recorrência seguem editáveis
-           depois pela tela de detalhe da demanda. -->
-      <div style="display:none" aria-hidden="true">
-        <div id="f-template-group"><select id="f-template"><option value="">— Em branco —</option></select></div>
-        <input id="f-deadline" type="date">
-        <select id="f-status"></select>
-        <input id="f-estimated" type="number" value="">
-        <input type="checkbox" id="f-rec-enabled">
-        <div id="f-rec-config">
-          <select id="f-rec-pattern"><option value="weekly" selected>Semanalmente</option></select>
-          <div id="f-rec-weekday-g"><select id="f-rec-weekday"><option value="1" selected>Segunda</option></select></div>
-          <div id="f-rec-monthday-g" style="display:none"><input id="f-rec-monthday" type="number" value="1"></div>
-          <input id="f-rec-end" type="date">
+        <!-- Campos ocultos do form (mantidos pra compat de JS / dados padrão). -->
+        <div style="display:none" aria-hidden="true">
+          <div id="f-template-group"><select id="f-template"><option value="">— Em branco —</option></select></div>
+          <input id="f-deadline" type="date">
+          <select id="f-status"></select>
+          <input id="f-estimated" type="number" value="">
+          <input type="checkbox" id="f-rec-enabled">
+          <div id="f-rec-config">
+            <select id="f-rec-pattern"><option value="weekly" selected>Semanalmente</option></select>
+            <div id="f-rec-weekday-g"><select id="f-rec-weekday"><option value="1" selected>Segunda</option></select></div>
+            <div id="f-rec-monthday-g" style="display:none"><input id="f-rec-monthday" type="number" value="1"></div>
+            <input id="f-rec-end" type="date">
+          </div>
         </div>
-      </div>
-    </div>
-    <div class="modal-footer client-modal-foot">
+      </div><!-- /dw-step-4 -->
+    </div><!-- /modal-body -->
+    <div class="modal-footer client-modal-foot demand-wizard-footer">
       <div class="client-modal-foot-left">
+        <button class="btn btn-ghost" id="dw-back-btn" onclick="wizardBack()" style="display:none">Voltar</button>
         <button class="btn btn-danger btn-sm" id="demand-delete-btn" style="display:none" onclick="deleteDemand()">Excluir</button>
-        <button class="btn btn-ghost" onclick="openSaveAsTemplate()" id="save-as-template-btn">Salvar como template</button>
       </div>
       <div class="client-modal-foot-right">
-        <button class="btn btn-ghost" onclick="closeModal('demand-modal')">Cancelar</button>
-        <button class="btn btn-primary" onclick="withLoading(event, saveDemand)">Salvar Demanda</button>
+        <button class="btn btn-ghost" id="save-as-template-btn" onclick="openSaveAsTemplate()" style="display:none">Salvar como template</button>
+        <button class="btn btn-primary" id="dw-next-btn" onclick="wizardNext()" disabled>Avançar</button>
+        <button class="btn btn-primary" id="dw-create-btn" onclick="withLoading(event, saveDemand)" style="display:none">Criar demanda</button>
       </div>
     </div>
   </div>
@@ -1172,6 +1216,23 @@
       <div style="font-size:11px;color:var(--text-muted);margin-top:12px;line-height:1.6">
         <strong>Prazo (dias)</strong> começa a contar quando a demanda entra na etapa. <strong>Responsável</strong> assume a demanda ao chegar nela.
         Marque <strong>"Conclui"</strong> nas etapas que encerram a demanda. Se uma etapa em uso for removida, as demandas dela voltam à primeira etapa.
+      </div>
+
+      <!-- Defaults aplicados às novas demandas deste fluxo -->
+      <div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--hairline)">
+        <div class="section-title" style="font-size:13px;margin-bottom:14px">Padrões pra novas demandas deste fluxo</div>
+        <div class="form-group full" style="margin-bottom:18px">
+          <label class="form-label">Descrição padrão</label>
+          <textarea class="form-control" id="fl-default-desc" rows="3" placeholder="Texto que aparecerá pré-preenchido na descrição de toda demanda criada neste fluxo (editável depois)." oninput="flowModalDirty=true"></textarea>
+        </div>
+        <div class="form-group full">
+          <label class="form-label">Checklist padrão</label>
+          <div class="flow-checklist-list" id="fl-default-checklist"></div>
+          <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="addFlowChecklistItem()"><i data-lucide="plus" class="ic-sm"></i> Adicionar item</button>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.5">
+            Itens listados aparecerão no checklist de toda demanda nova deste fluxo. Quem cria pode editar ou remover antes de salvar.
+          </div>
+        </div>
       </div>
     </div>
     <div class="modal-footer flow-modal-foot">
